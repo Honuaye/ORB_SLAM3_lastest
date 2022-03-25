@@ -227,18 +227,6 @@ public:
     // In the RGB-D case, RGB images can be distorted.
     std::vector<cv::KeyPoint> mvKeys, mvKeysRight;
     std::vector<cv::KeyPoint> mvKeysUn;
-    // yhh-depth_filter --------------------------------------
-    // // std::vector<>
-    // SeedStateVec invmu_sigma2_a_b_vec_;
-    // double seed_mu_range_;
-    // frame->invmu_sigma2_a_b_vec_.resize(Eigen::NoChange,
-    //                                     frame->numFeatures());
-    set<MapPoint*> GetMapPoints();
-    MapPoint* GetMapPoint(const size_t &idx) {
-        return mvpMapPoints[idx];
-    }
-    // yhh-depth_filter --------------------------------------
-
 
     // Corresponding stereo coordinate and depth for each keypoint.
     std::vector<MapPoint*> mvpMapPoints;

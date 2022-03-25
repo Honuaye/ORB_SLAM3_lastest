@@ -173,6 +173,17 @@ if __name__=="__main__":
     second_xyz_full = numpy.matrix([[float(value)*float(args.scale) for value in second_list[b][0:3]] for b in second_stamps]).transpose()
     second_xyz_full_aligned = scale * rot * second_xyz_full + trans
     
+    print "compared_pose_pairs %d pairs"%(len(trans_error))
+    print "absolute_translational_error.rmse %f m"%numpy.sqrt(numpy.dot(trans_error,trans_error) / len(trans_error))
+    print "absolute_translational_error.mean %f m"%numpy.mean(trans_error)
+    print "absolute_translational_error.median %f m"%numpy.median(trans_error)
+    print "absolute_translational_error.std %f m"%numpy.std(trans_error)
+    print "absolute_translational_error.min %f m"%numpy.min(trans_error)
+    print "absolute_translational_error.max %f m"%numpy.max(trans_error)
+    print "max idx: %i" %numpy.argmax(trans_error)
+    print "compared_pose_pairs %d pairs"%(len(trans_error))
+    print "absolute_translational_error.rmse %f m"%numpy.sqrt(numpy.dot(trans_error,trans_error) / len(trans_error))
+    print "absolute_translational_errorGT.rmse %f m"%numpy.sqrt(numpy.dot(trans_errorGT,trans_errorGT) / len(trans_errorGT))
     if args.verbose:
         print "compared_pose_pairs %d pairs"%(len(trans_error))
 
@@ -204,6 +215,7 @@ if __name__=="__main__":
         file.close()
 
     if args.plot:
+        print("plot 1------------------")
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
@@ -224,6 +236,7 @@ if __name__=="__main__":
         ax.set_ylabel('y [m]')
         plt.axis('equal')
         plt.savefig(args.plot,format="pdf")
+        print("plot 3------------------")
 
 
         

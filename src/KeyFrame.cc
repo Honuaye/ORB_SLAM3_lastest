@@ -39,13 +39,7 @@ KeyFrame::KeyFrame():
         mbToBeErased(false), mbBad(false), mHalfBaseline(0), mbCurrentPlaceRecognition(false), mnMergeCorrectedForKF(0),
         NLeft(0),NRight(0), mnNumberOfOpt(0), mbHasVelocity(false)
 {
-    // yhh-depth_filter --------------------------------------
-    invmu_sigma2_a_b_vec_.resize(Eigen::NoChange, mvKeysUn.size());
-    bearing_vecs_.resize(Eigen::NoChange, mvKeysUn.size());
-    depth_filter_state_.resize(mvKeysUn.size(), seed::SeedType::NotSeed);
-    feature_wrappers_.resize(mvKeysUn.size());
-    depth_filter_processing_ = false;
-    // yhh-depth_filter --------------------------------------
+
 }
 
 KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
@@ -67,14 +61,6 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     mvLeftToRightMatch(F.mvLeftToRightMatch),mvRightToLeftMatch(F.mvRightToLeftMatch), mTlr(F.GetRelativePoseTlr()),
     mvKeysRight(F.mvKeysRight), NLeft(F.Nleft), NRight(F.Nright), mTrl(F.GetRelativePoseTrl()), mnNumberOfOpt(0), mbHasVelocity(false)
 {
-    // yhh-depth_filter --------------------------------------
-    invmu_sigma2_a_b_vec_.resize(Eigen::NoChange, mvKeysUn.size());
-    bearing_vecs_.resize(Eigen::NoChange, mvKeysUn.size());
-    depth_filter_state_.resize(mvKeysUn.size(), seed::SeedType::NotSeed);
-    feature_wrappers_.resize(mvKeysUn.size());
-    depth_filter_processing_ = false;
-    // yhh-depth_filter --------------------------------------
-
     mnId=nNextId++;
 
     mGrid.resize(mnGridCols);
@@ -1022,6 +1008,7 @@ void KeyFrame::PostLoad(map<long unsigned int, KeyFrame*>& mpKFid, map<long unsi
     UpdateBestCovisibles();
 }
 
+
 bool KeyFrame::ProjectPointDistort(MapPoint* pMP, cv::Point2f &kp, float &u, float &v)
 {
 
@@ -1084,6 +1071,33 @@ bool KeyFrame::ProjectPointDistort(MapPoint* pMP, cv::Point2f &kp, float &u, flo
 
     return true;
 }
+
+bool KeyFrame::ProjectPointUnDistort(const Eigen::Vector3f &point, double* inv_depth, double *u, double *v) {
+    // 3D in camera coordinates
+    Eigen::Vector3f Pc = mRcw * point + mTcw.translation();
+    float &PcX = Pc(0);
+    float &PcY= Pc(1);
+    float &PcZ = Pc(2);
+    // Check positive depth
+    if(PcZ < 0.0f) {
+        cout << "Negative depth: " << PcZ << endl;
+        return false;
+    }
+
+    // Project in image and check it is not outside
+    const float invz = 1.0f / PcZ;
+    *inv_depth = static_cast<double>(1.0 / PcZ);
+    *u = static_cast<double>(fx * PcX * invz + cx);
+    *v = static_cast<double>(fy * PcY * invz + cy);
+
+    if(*u < mnMinX || *u > mnMaxX)
+        return false;
+    if(*v < mnMinY || *v > mnMaxY)
+        return false;
+
+    return true;
+}
+
 
 bool KeyFrame::ProjectPointUnDistort(MapPoint* pMP, cv::Point2f &kp, float &u, float &v)
 {

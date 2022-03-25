@@ -107,10 +107,14 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     MapPoint();
 
-    MapPoint(const Eigen::Vector3f &Pos, KeyFrame* pRefKF, Map* pMap);
-    MapPoint(const double invDepth, cv::Point2f uv_init, KeyFrame* pRefKF, KeyFrame* pHostKF, Map* pMap);
+    MapPoint(const Eigen::Vector3f &Pos, KeyFrame* pRefKF, Map* pMap,
+        float* inv_z = nullptr, float* undistort_u = nullptr, float* undistort_v = nullptr, float *init_sigma_square = nullptr);
+    // MapPoint(const double invDepth, cv::Point2f uv_init, KeyFrame* pRefKF, KeyFrame* pHostKF, Map* pMap);
     MapPoint(const Eigen::Vector3f &Pos,  Map* pMap, Frame* pFrame, const int &idxF);
 
+    void SetInvDepth(const double &inv_depth) {
+        mInvDepth = inv_depth;
+    }
     void SetWorldPos(const Eigen::Vector3f &Pos);
     Eigen::Vector3f GetWorldPos();
 
@@ -198,9 +202,14 @@ public:
 
 
     // Fopr inverse depth optimization
+    bool creat_in_keyframe_;
+    bool inv_optimizing_;
+    int keframe_index_in_current_ba;
+
     double mInvDepth;
     double mInitU;
     double mInitV;
+    double init_sigma_square_;
     KeyFrame* mpHostKF;
 
     static std::mutex mGlobalMutex;

@@ -20,15 +20,15 @@
 #ifndef LOCALMAPPING_H
 #define LOCALMAPPING_H
 
+#include <fstream>
+#include <mutex>
+
 #include "KeyFrame.h"
 #include "Atlas.h"
 #include "LoopClosing.h"
 #include "Tracking.h"
 #include "KeyFrameDatabase.h"
 #include "Settings.h"
-#include "depth_filter.h"
-
-#include <mutex>
 
 
 namespace ORB_SLAM3
@@ -38,21 +38,17 @@ class System;
 class Tracking;
 class LoopClosing;
 class Atlas;
-class DepthFilter;
 
 class LocalMapping
 {
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     LocalMapping(System* pSys, Atlas* pAtlas, const float bMonocular, bool bInertial, const string &_strSeqName=std::string());
+    ~LocalMapping();
+    std::ofstream save_times_;
+    bool first_ = true;
 
-    // yhh-depth_filter --------------------------------------
     void SetLoopCloser(LoopClosing* pLoopCloser);
-    void SetDepthFilter(DepthFilter* depth_filter) {
-        depth_filter_ = depth_filter;
-    }
-    DepthFilter* depth_filter_;
-    // yhh-depth_filter --------------------------------------
 
     void SetTracker(Tracking* pTracker);
 

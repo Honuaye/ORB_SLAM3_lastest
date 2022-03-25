@@ -86,6 +86,7 @@ public:
     void Update(const double *pu); // update in the imu reference
     void UpdateW(const double *pu); // update in the world reference
     Eigen::Vector2d Project(const Eigen::Vector3d &Xw, int cam_idx=0) const; // Mono
+    Eigen::Vector3d ConvertCameraToWorld(const Eigen::Vector3d &P_camera, int cam_idx) const;
     Eigen::Vector3d ProjectStereo(const Eigen::Vector3d &Xw, int cam_idx=0) const; // Stereo
     bool isDepthPositive(const Eigen::Vector3d &Xw, int cam_idx=0) const;
 
@@ -109,21 +110,19 @@ public:
     int its;
 };
 
-class InvDepthPoint
-{
-public:
+class InvDepthPoint {
+ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     InvDepthPoint(){}
     InvDepthPoint(double _rho, double _u, double _v, KeyFrame* pHostKF);
-
     void Update(const double *pu);
-
     double rho;
     double u, v; // they are not variables, observation in the host frame
-
     double fx, fy, cx, cy, bf; // from host frame
-
     int its;
+    Eigen::Vector3d p_3d_;
+    Eigen::Vector3d p_2d_;
+ private:
 };
 
 // Optimizable parameters are IMU pose
@@ -318,26 +317,62 @@ public:
 
 
 // Inverse depth point (just one parameter, inverse depth at the host frame)
-class VertexInvDepth : public g2o::BaseVertex<1,InvDepthPoint>
-{
-public:
+class VertexInvDepth : public g2o::BaseVertex<1,InvDepthPoint> {
+ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     VertexInvDepth(){}
     VertexInvDepth(double invDepth, double u, double v, KeyFrame* pHostKF){
         setEstimate(InvDepthPoint(invDepth, u, v, pHostKF));
     }
-
     virtual bool read(std::istream& is){return false;}
     virtual bool write(std::ostream& os) const{return false;}
-
-    virtual void setToOriginImpl() {
-        }
-
+    virtual void setToOriginImpl() {}
     virtual void oplusImpl(const double* update_){
         _estimate.Update(update_);
         updateCache();
     }
+    void printE(){
+        std::cout 
+            << "\t rho = " << _estimate.rho
+            << "\t u = " << _estimate.u
+            << "\t v = " << _estimate.v
+            <<"\n";
+    }
+
 };
+
+// // yhh
+class EdgeMonoInvDepth : public g2o::BaseMultiEdge<2, Eigen::Vector2d> {
+ public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    EdgeMonoInvDepth(const ImuCamPose &VPose_encode_frame, int encode_cam_idx = 0,  int obs_cam_idx = 0);
+    virtual bool read(std::istream& is){return false;}
+    virtual bool write(std::ostream& os) const{return false;}
+    void computeError(){
+        const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+        const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
+        const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
+        Eigen::Vector3d p_w = VPose_encode_frame_.ConvertCameraToWorld(p_3d_f0, encode_cam_idx_);
+        const Eigen::Vector2d obs(_measurement);
+        _error = obs - VPose_obs_frame->estimate().Project(p_w, obs_cam_idx_);
+    }
+
+    bool isDepthPositive() {
+        const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+        const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
+        const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
+        Eigen::Vector3d p_w = VPose_encode_frame_.ConvertCameraToWorld(p_3d_f0, encode_cam_idx_);
+        return VPose_encode_frame_.isDepthPositive(p_w, encode_cam_idx_) ||
+            VPose_obs_frame->estimate().isDepthPositive(p_w, obs_cam_idx_);
+    }
+
+    virtual void linearizeOplus();
+ public:
+    const int obs_cam_idx_;
+    const int encode_cam_idx_;
+    ImuCamPose VPose_encode_frame_;
+};
+
 
 class EdgeMono : public g2o::BaseBinaryEdge<2,Eigen::Vector2d,g2o::VertexSBAPointXYZ,VertexPose>
 {
@@ -354,7 +389,12 @@ public:
         const g2o::VertexSBAPointXYZ* VPoint = static_cast<const g2o::VertexSBAPointXYZ*>(_vertices[0]);
         const VertexPose* VPose = static_cast<const VertexPose*>(_vertices[1]);
         const Eigen::Vector2d obs(_measurement);
+        auto tmp = _error;
         _error = obs - VPose->estimate().Project(VPoint->estimate(),cam_idx);
+        // std::cout
+        //     << "Error befor = " <<tmp(0)<<",  "<<tmp(1)
+        //     << "\t Error After = " <<_error(0)<<",  "<<_error(1)
+        //     <<"\n";
     }
 
 

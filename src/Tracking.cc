@@ -2135,58 +2135,13 @@ void Tracking::Track()
             // mbVO true means that there are few matches to MapPoints in the map. We cannot retrieve
             // a local map and therefore we do not perform TrackLocalMap(). Once the system relocalizes
             // the camera we will use the local map again.
-            if(bOK && !mbVO) {
+            if(bOK && !mbVO)
                 bOK = TrackLocalMap();
-            }
         }
 
-        // yhh-depth_filter --------------------------------------
-        // Tracking 部分修改： 都是服务下面代码。调用 updateSeedsWithFrame
-        // 核心思路是判断 哪些关键帧 可以用当前帧来更新它的种子。 选太多关键帧耗时大， 选太少会不行.
-        if(bOK) {
-            int max_update_num = 10;
-            std::vector<KeyFrame*> ref_frames_with_seeds;
-            // // 选取需要被当前图像帧 更新种子的关键帧： 方案一： 取连续的 max_update_num 个 pKF； 方案二： 取共视最高的 max_update_num 个pKF；
-            // // 方案一：
-            // KeyFrame* pKF = mCurrentFrame.mpLastKeyFrame;
-            // for(int i = 0 ; i < max_update_num; ++i) {
-            //     if(pKF) {
-            //         ref_frames_with_seeds.push_back(pKF);
-            //         pKF = pKF->mPrevKF;
-            //     }
-            // }
-            // // // 方案二：
-            // int cov_num = mvpSortLocalKeyFrames_pair_.size();
-            // if(cov_num > 5) cov_num = 5;
-            // // cov_num = std::min(cov_num, mvpSortLocalKeyFrames_pair_.size());
-            // for(size_t i = 0; i < cov_num; ++i) {
-            //     auto keyframe = mvpSortLocalKeyFrames_pair_.at(i).first;
-            //     auto it = std::find(ref_frames_with_seeds.begin(), ref_frames_with_seeds.end(), keyframe);
-            //     if(it==ref_frames_with_seeds.end()) {
-            //         ref_frames_with_seeds.push_back(keyframe);
-            //     }
-            // }
-            for(auto tmp : mvpSortLocalKeyFrames_pair_) {
-                ref_frames_with_seeds.push_back(tmp.first);
-            }
-            // // if(ref_frames_with_seeds.size() < max_update_num) {
-            // //     ref_frames_with_seeds.push_back(mvpSortLocalKeyFrames_pair_.at(0).first);
-            // // }
-            std::chrono::steady_clock::time_point time0 = std::chrono::steady_clock::now();
-            depth_filter_->updateSeedsWithFrame(ref_frames_with_seeds, &mCurrentFrame);
-            std::chrono::steady_clock::time_point time1 = std::chrono::steady_clock::now();
-            double time_gap = 
-                std::chrono::duration_cast<std::chrono::duration<double,std::milli> >
-                (time1 - time0).count();
-            std::cout << "Tracking update_depth_filter time_gap(ms) = " << time_gap 
-                << " \t ref_frames_with_seeds = " << ref_frames_with_seeds.size()
-                <<  "\n";
-        }
-        // yhh-depth_filter --------------------------------------
-
-        if(bOK) {
+        if(bOK)
             mState = OK;
-        } else if (mState == OK)
+        else if (mState == OK)
         {
             if (mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
             {
@@ -2991,23 +2946,15 @@ bool Tracking::TrackWithMotionModel()
         return nmatchesMap>=10;
 }
 
-bool Tracking::TrackLocalMap() {
+bool Tracking::TrackLocalMap()
+{
 
     // We have an estimation of the camera pose and some map points tracked in the frame.
     // We retrieve the local map and try to find matches to points in the local map.
     mTrackedFr++;
 
-    // yhh
     UpdateLocalMap();
     SearchLocalPoints();
-    // yhh-depth_filter --------------------------------------
-    // std::cout
-    //     <<"vPMapPoints A SearchLocalPoints = "<<mCurrentFrame.GetMapPoints().size()
-    //     <<"\t mvpMapPoints.size = "<<mCurrentFrame.mvpMapPoints.size()
-    //     <<"\t mvKeys.size = "<<mCurrentFrame.mvKeys.size()
-    //     <<"\t mvKeysUn.size = "<<mCurrentFrame.mvKeysUn.size()
-    //     <<"\n";
-    // yhh-depth_filter --------------------------------------
 
     // TOO check outliers before PO
     int aux1 = 0, aux2=0;
@@ -3035,11 +2982,19 @@ bool Tracking::TrackLocalMap() {
             if(!mbMapUpdated) //  && (mnMatchesInliers>30))
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastFrame ", Verbose::VERBOSITY_DEBUG);
+                std::cout
+                    << std::to_string(mCurrentFrame.mTimeStamp)
+                    << ":\t PoseInertialOptimizationLastFrame "
+                    <<std::endl;
                 inliers = Optimizer::PoseInertialOptimizationLastFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
             else
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastKeyFrame ", Verbose::VERBOSITY_DEBUG);
+                std::cout
+                    << std::to_string(mCurrentFrame.mTimeStamp)
+                    << ":\t PoseInertialOptimizationLastKeyFrame "
+                    <<std::endl;
                 inliers = Optimizer::PoseInertialOptimizationLastKeyFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
         }
@@ -3076,6 +3031,7 @@ bool Tracking::TrackLocalMap() {
                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
         }
     }
+    std::cout << "mnMatchesInliers  = "<<mnMatchesInliers<<"\n";
 
     // Decide if the tracking was succesful
     // More restrictive if there was a relocalization recently
@@ -3482,6 +3438,7 @@ void Tracking::UpdateLocalPoints()
     mvpLocalMapPoints.clear();
 
     int count_pts = 0;
+
     for(vector<KeyFrame*>::const_reverse_iterator itKF=mvpLocalKeyFrames.rbegin(), itEndKF=mvpLocalKeyFrames.rend(); itKF!=itEndKF; ++itKF)
     {
         KeyFrame* pKF = *itKF;
@@ -3489,7 +3446,7 @@ void Tracking::UpdateLocalPoints()
 
         for(vector<MapPoint*>::const_iterator itMP=vpMPs.begin(), itEndMP=vpMPs.end(); itMP!=itEndMP; itMP++)
         {
-            // TODO yhh
+
             MapPoint* pMP = *itMP;
             if(!pMP)
                 continue;
@@ -3559,9 +3516,6 @@ void Tracking::UpdateLocalKeyFrames()
     int max=0;
     KeyFrame* pKFmax= static_cast<KeyFrame*>(NULL);
 
-    // map<KeyFrame*,int> keyframeCounter;
-    // yhh-depth_filter --------------------------------------
-    mvpSortLocalKeyFrames_pair_.clear();
     mvpLocalKeyFrames.clear();
     mvpLocalKeyFrames.reserve(3*keyframeCounter.size());
 
@@ -3580,21 +3534,8 @@ void Tracking::UpdateLocalKeyFrames()
         }
 
         mvpLocalKeyFrames.push_back(pKF);
-        mvpSortLocalKeyFrames_pair_.push_back(std::make_pair(pKF, it->second));
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
     }
-    // sort mvpSortLocalKeyFrames_pair_
-    int number_to_update_depth_filter = 4;
-    int tmp_size = mvpSortLocalKeyFrames_pair_.size();
-    // size_t N = std::min(number_to_update_depth_filter, tmp_size);
-    size_t N = tmp_size;
-    std::nth_element(
-        mvpSortLocalKeyFrames_pair_.begin(), mvpSortLocalKeyFrames_pair_.begin() + N, mvpSortLocalKeyFrames_pair_.end(), 
-        [](const std::pair<KeyFrame*, int>& lhs, const std::pair<KeyFrame*, int>& rhs) {
-            return lhs.second > rhs.second;
-        }
-    );
-    // yhh-depth_filter --------------------------------------
 
     // Include also some not-already-included keyframes that are neighbors to already-included keyframes
     for(vector<KeyFrame*>::const_iterator itKF=mvpLocalKeyFrames.begin(), itEndKF=mvpLocalKeyFrames.end(); itKF!=itEndKF; itKF++)

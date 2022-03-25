@@ -30,13 +30,14 @@ mutex MapPoint::mGlobalMutex;
 MapPoint::MapPoint():
     mnFirstKFid(0), mnFirstFrame(0), nObs(0), mnTrackReferenceForFrame(0),
     mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
-    mnCorrectedReference(0), mnBAGlobalForKF(0), mnVisible(1), mnFound(1), mbBad(false),
+    mnCorrectedReference(0), mnBAGlobalForKF(0), mnVisible(1), mnFound(1), mbBad(false),creat_in_keyframe_(false),
     mpReplaced(static_cast<MapPoint*>(NULL))
 {
     mpReplaced = static_cast<MapPoint*>(NULL);
 }
 
-MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap):
+MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap, float* inv_z,
+    float* undistort_u, float* undistort_v, float *init_sigma_square):
     mnFirstKFid(pRefKF->mnId), mnFirstFrame(pRefKF->mnFrameId), nObs(0), mnTrackReferenceForFrame(0),
     mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
     mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(pRefKF), mnVisible(1), mnFound(1), mbBad(false),
@@ -44,7 +45,31 @@ MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap):
     mnOriginMapId(pMap->GetId())
 {
     SetWorldPos(Pos);
-
+    creat_in_keyframe_ = true;
+    mpHostKF = pRefKF;
+    // pRefKF->ProjectPointUnDistort(Pos, &mInvDepth, &mInitU, &mInitV);
+    if(inv_z) {
+        mInvDepth = static_cast<double>(*inv_z);
+    } else {
+        mInvDepth = 0.0;
+    }
+    if(undistort_u) {
+        mInitU = static_cast<double>(*undistort_u);
+    } else {
+        mInitU = 0.0;
+    }
+    if(undistort_v) {
+        mInitV = static_cast<double>(*undistort_v);
+    } else {
+        mInitV = 0.0;
+    }
+    if(init_sigma_square) {
+        init_sigma_square_ = static_cast<double>(*init_sigma_square);
+    } else {
+        init_sigma_square_ = 0.0;
+    }
+    inv_optimizing_ = false;
+    keframe_index_in_current_ba = -1;
     mNormalVector.setZero();
 
     mbTrackInViewR = false;
@@ -55,25 +80,25 @@ MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap):
     mnId=nNextId++;
 }
 
-MapPoint::MapPoint(const double invDepth, cv::Point2f uv_init, KeyFrame* pRefKF, KeyFrame* pHostKF, Map* pMap):
-    mnFirstKFid(pRefKF->mnId), mnFirstFrame(pRefKF->mnFrameId), nObs(0), mnTrackReferenceForFrame(0),
-    mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
-    mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(pRefKF), mnVisible(1), mnFound(1), mbBad(false),
-    mpReplaced(static_cast<MapPoint*>(NULL)), mfMinDistance(0), mfMaxDistance(0), mpMap(pMap),
-    mnOriginMapId(pMap->GetId())
-{
-    mInvDepth=invDepth;
-    mInitU=(double)uv_init.x;
-    mInitV=(double)uv_init.y;
-    mpHostKF = pHostKF;
+// MapPoint::MapPoint(const double invDepth, cv::Point2f uv_init, KeyFrame* pRefKF, KeyFrame* pHostKF, Map* pMap):
+//     mnFirstKFid(pRefKF->mnId), mnFirstFrame(pRefKF->mnFrameId), nObs(0), mnTrackReferenceForFrame(0),
+//     mnLastFrameSeen(0), mnBALocalForKF(0), mnFuseCandidateForKF(0), mnLoopPointForKF(0), mnCorrectedByKF(0),
+//     mnCorrectedReference(0), mnBAGlobalForKF(0), mpRefKF(pRefKF), mnVisible(1), mnFound(1), mbBad(false),
+//     mpReplaced(static_cast<MapPoint*>(NULL)), mfMinDistance(0), mfMaxDistance(0), mpMap(pMap),
+//     mnOriginMapId(pMap->GetId())
+// {
+//     mInvDepth=invDepth;
+//     mInitU=(double)uv_init.x;
+//     mInitV=(double)uv_init.y;
+//     mpHostKF = pHostKF;
 
-    mNormalVector.setZero();
+//     mNormalVector.setZero();
 
-    // Worldpos is not set
-    // MapPoints can be created from Tracking and Local Mapping. This mutex avoid conflicts with id.
-    unique_lock<mutex> lock(mpMap->mMutexPointCreation);
-    mnId=nNextId++;
-}
+//     // Worldpos is not set
+//     // MapPoints can be created from Tracking and Local Mapping. This mutex avoid conflicts with id.
+//     unique_lock<mutex> lock(mpMap->mMutexPointCreation);
+//     mnId=nNextId++;
+// }
 
 MapPoint::MapPoint(const Eigen::Vector3f &Pos, Map* pMap, Frame* pFrame, const int &idxF):
     mnFirstKFid(-1), mnFirstFrame(pFrame->mnId), nObs(0), mnTrackReferenceForFrame(0), mnLastFrameSeen(0),
@@ -82,6 +107,7 @@ MapPoint::MapPoint(const Eigen::Vector3f &Pos, Map* pMap, Frame* pFrame, const i
     mnFound(1), mbBad(false), mpReplaced(NULL), mpMap(pMap), mnOriginMapId(pMap->GetId())
 {
     SetWorldPos(Pos);
+    creat_in_keyframe_ = false;
 
     Eigen::Vector3f Ow;
     if(pFrame -> Nleft == -1 || idxF < pFrame -> Nleft){

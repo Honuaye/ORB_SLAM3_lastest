@@ -99,22 +99,12 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     }
 
     node = fsSettings["loopClosing"];
-    bool activeLC = true;
-    if(!node.empty())
-    {
-        activeLC = static_cast<int>(fsSettings["loopClosing"]) != 0;
-    }
-    activeLC = false;
-    if(activeLC) {
-        printf("use activeLC !!!!!!!  \n");
-        printf("use activeLC !!!!!!!  \n");
-        printf("use activeLC !!!!!!!  \n");
-    } else {
-        printf("Not use activeLC !!!!!!!  \n");
-        printf("Not use activeLC !!!!!!!  \n");
-        printf("Not use activeLC !!!!!!!  \n");
-    }
-    activeLC = false;
+    bool activeLC = false;
+    // bool activeLC = true;
+    // if(!node.empty())
+    // {
+    //     activeLC = static_cast<int>(fsSettings["loopClosing"]) != 0;
+    // }
 
     mStrVocabularyFilePath = strVocFile;
 
@@ -192,7 +182,6 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     if (mSensor==IMU_STEREO || mSensor==IMU_MONOCULAR || mSensor==IMU_RGBD)
         mpAtlas->SetInertialSensor();
 
-
     //Create Drawers. These are used by the Viewer
     mpFrameDrawer = new FrameDrawer(mpAtlas);
     mpMapDrawer = new MapDrawer(mpAtlas, strSettingsFile, settings_);
@@ -223,7 +212,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //Initialize the Loop Closing thread and launch
     // mSensor!=MONOCULAR && mSensor!=IMU_MONOCULAR
     mpLoopCloser = new LoopClosing(mpAtlas, mpKeyFrameDatabase, mpVocabulary, mSensor!=MONOCULAR, activeLC); // mSensor!=MONOCULAR);
-    // mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
+    mptLoopClosing = new thread(&ORB_SLAM3::LoopClosing::Run, mpLoopCloser);
 
     //Set pointers between threads
     mpTracker->SetLocalMapper(mpLocalMapper);
@@ -231,14 +220,6 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     mpLocalMapper->SetTracker(mpTracker);
     mpLocalMapper->SetLoopCloser(mpLoopCloser);
-
-
-    // yhh-depth_filter --------------------------------------
-    DepthFilterOptions depth_filter_options;
-    DepthFilter* depth_filter = new DepthFilter(depth_filter_options);
-    mpTracker->SetDepthFilter(depth_filter);
-    mpLocalMapper->SetDepthFilter(depth_filter);
-    // yhh-depth_filter --------------------------------------
 
     mpLoopCloser->SetTracker(mpTracker);
     mpLoopCloser->SetLocalMapper(mpLocalMapper);
@@ -1102,8 +1083,12 @@ void System::SaveKeyFrameTrajectoryEuRoC(const string &filename)
     // Transform all keyframes so that the first keyframe is at the origin.
     // After a loop closure the first keyframe might not be at the origin.
     ofstream f;
+    ofstream f_t;
     f.open(filename.c_str());
+    string filename_time =  "time_" +filename;
+    f_t.open(filename_time.c_str());
     f << fixed;
+    f_t << fixed;
 
     for(size_t i=0; i<vpKFs.size(); i++)
     {
@@ -1128,8 +1113,10 @@ void System::SaveKeyFrameTrajectoryEuRoC(const string &filename)
             Eigen::Vector3f t = Twc.translation();
             f << setprecision(6) << 1e9*pKF->mTimeStamp << " " <<  setprecision(9) << t(0) << " " << t(1) << " " << t(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
         }
+        f_t << 1e9*pKF->mTimeStamp << " "<< pKF->lba_time_<<"\n";
     }
     f.close();
+    f_t.close();
 }
 
 void System::SaveKeyFrameTrajectoryEuRoC(const string &filename, Map* pMap)

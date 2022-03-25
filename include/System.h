@@ -39,7 +39,7 @@
 #include "Viewer.h"
 #include "ImuTypes.h"
 #include "Settings.h"
-#include "depth_filter.h"
+
 
 namespace ORB_SLAM3
 {
@@ -79,7 +79,6 @@ class Tracking;
 class LocalMapping;
 class LoopClosing;
 class Settings;
-class DepthFilter;
 
 class System
 {

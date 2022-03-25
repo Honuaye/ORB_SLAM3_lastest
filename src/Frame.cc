@@ -382,21 +382,6 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
 }
 
 
-set<MapPoint*> Frame::GetMapPoints()
-{
-    set<MapPoint*> s;
-    for(size_t i=0, iend=mvpMapPoints.size(); i<iend; i++)
-    {
-        if(!mvpMapPoints[i])
-            continue;
-        MapPoint* pMP = mvpMapPoints[i];
-        if(!pMP->isBad())
-            s.insert(pMP);
-    }
-    return s;
-}
-
-
 void Frame::AssignFeaturesToGrid()
 {
     // Fill matrix with points

@@ -30,7 +30,8 @@ endif()
 
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
-find_package(OpenCV 3.2)
+# find_package(OpenCV 4.4)
+find_package(OpenCV 3.0)
    if(NOT OpenCV_FOUND)
       message(FATAL_ERROR "OpenCV > 4.4 not found.")
    endif()
@@ -82,7 +83,6 @@ src/GeometricTools.cc
 src/TwoViewReconstruction.cc
 src/Config.cc
 src/Settings.cc
-
 include/System.h
 include/Tracking.h
 include/LocalMapping.h
@@ -112,23 +112,7 @@ include/GeometricTools.h
 include/TwoViewReconstruction.h
 include/SerializationUtils.h
 include/Config.h
-include/Settings.h
-
-# yhh-depth_filter --------------------------------------
-include/depth_filter_util/type.h
-src/depth_filter.cc
-src/depth_filter_util/SVOmatcher.cpp
-src/depth_filter_util/patch_warp.cpp
-src/depth_filter_util/feature_alignment.cpp
-include/depth_filter.h
-include/depth_filter_util/SVOmatcher.h
-include/depth_filter_util/feature_wrapper.h
-include/depth_filter_util/seed.h
-include/depth_filter_util/patch_score.h
-include/depth_filter_util/patch_warp.h
-include/depth_filter_util/feature_alignment.h
-# patch_utils.h
-)
+include/Settings.h)
 
 add_subdirectory(Thirdparty/g2o)
 

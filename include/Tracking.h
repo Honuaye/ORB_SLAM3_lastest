@@ -36,7 +36,6 @@
 #include "System.h"
 #include "ImuTypes.h"
 #include "Settings.h"
-#include "depth_filter.h"
 
 #include "GeometricCamera.h"
 
@@ -53,7 +52,6 @@ class LocalMapping;
 class LoopClosing;
 class System;
 class Settings;
-class DepthFilter;
 
 class Tracking
 {  
@@ -64,14 +62,6 @@ public:
              KeyFrameDatabase* pKFDB, const string &strSettingPath, const int sensor, Settings* settings, const string &_nameSeq=std::string());
 
     ~Tracking();
-
-    // yhh-depth_filter --------------------------------------
-    void SetDepthFilter(DepthFilter* depth_filter) {
-        depth_filter_ = depth_filter;
-    }
-    DepthFilter* depth_filter_;
-    std::vector<std::pair<KeyFrame*, int>> mvpSortLocalKeyFrames_pair_;
-    // yhh-depth_filter --------------------------------------
 
     // Parse the config file
     bool ParseCamParamFile(cv::FileStorage &fSettings);

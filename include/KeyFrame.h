@@ -20,10 +20,6 @@
 #ifndef KEYFRAME_H
 #define KEYFRAME_H
 
-#include <mutex>
-#include <boost/serialization/base_object.hpp>
-#include <boost/serialization/vector.hpp>
-#include <boost/serialization/map.hpp>
 #include "MapPoint.h"
 #include "Thirdparty/DBoW2/DBoW2/BowVector.h"
 #include "Thirdparty/DBoW2/DBoW2/FeatureVector.h"
@@ -32,11 +28,15 @@
 #include "Frame.h"
 #include "KeyFrameDatabase.h"
 #include "ImuTypes.h"
+
 #include "GeometricCamera.h"
 #include "SerializationUtils.h"
 
-#include "depth_filter_util/seed.h"
-#include "depth_filter_util/feature_wrapper.h"
+#include <mutex>
+
+#include <boost/serialization/base_object.hpp>
+#include <boost/serialization/vector.hpp>
+#include <boost/serialization/map.hpp>
 
 
 namespace ORB_SLAM3
@@ -46,7 +46,6 @@ class Map;
 class MapPoint;
 class Frame;
 class KeyFrameDatabase;
-class FeatureWrapper;
 
 class GeometricCamera;
 
@@ -253,9 +252,7 @@ public:
     void EraseMapPointMatch(const int &idx);
     void EraseMapPointMatch(MapPoint* pMP);
     void ReplaceMapPointMatch(const int &idx, MapPoint* pMP);
-    // 获取已经被三角化的 3D 点
     std::set<MapPoint*> GetMapPoints();
-    // 获取当前管
     std::vector<MapPoint*> GetMapPointMatches();
     int TrackedMapPoints(const int &minObs);
     MapPoint* GetMapPoint(const size_t &idx);
@@ -298,6 +295,7 @@ public:
 
     bool ProjectPointDistort(MapPoint* pMP, cv::Point2f &kp, float &u, float &v);
     bool ProjectPointUnDistort(MapPoint* pMP, cv::Point2f &kp, float &u, float &v);
+    bool ProjectPointUnDistort(const Eigen::Vector3f &point, double* inv_depth , double *u, double *v);
 
     void PreSave(set<KeyFrame*>& spKF,set<MapPoint*>& spMP, set<GeometricCamera*>& spCam);
     void PostLoad(map<long unsigned int, KeyFrame*>& mpKFid, map<long unsigned int, MapPoint*>& mpMPid, map<unsigned int, GeometricCamera*>& mpCamId);
@@ -316,6 +314,7 @@ public:
     const long unsigned int mnFrameId;
 
     const double mTimeStamp;
+    string lba_time_;
 
     // Grid (to speed up feature matching)
     const int mnGridCols;
@@ -386,54 +385,6 @@ public:
     const std::vector<float> mvuRight; // negative value for monocular points
     const std::vector<float> mvDepth; // negative value for monocular points
     const cv::Mat mDescriptors;
-
-    // yhh-depth_filter --------------------------------------
-    Eigen::Matrix<double, 3, Eigen::Dynamic, Eigen::ColMajor> bearing_vecs_;
-    // using Bearings = Eigen::Matrix<FloatType, 3, Eigen::Dynamic, Eigen::ColMajor>;
-    SeedStateVec invmu_sigma2_a_b_vec_;
-    // ORB_SLAM3::seed::SeedType::ConvergedSeed;
-    std::vector<ORB_SLAM3::seed::SeedType> depth_filter_state_;
-    std::vector<FeatureWrapper> feature_wrappers_;
-    double seed_mu_range_;
-    bool depth_filter_processing_;
-    // // MapPoints associated to keypoints
-    // std::vector<MapPoint*> mvpMapPoints;
-    /// Get depth at seed.
-    double getSeedDepth(size_t idx) {
-        return seed::getDepth(invmu_sigma2_a_b_vec_.col(idx));
-    }
-    double printSeedType(std::string name = "") {
-        int ConvergedSeed = 0;
-        int alreadyChangeToPoint =0;
-        int Seed =0;
-        int NotSeed =0;
-        for(auto tmp : depth_filter_state_) {
-            if(tmp == ORB_SLAM3::seed::SeedType::ConvergedSeed) {
-                ConvergedSeed++;
-            } else if (tmp == ORB_SLAM3::seed::SeedType::alreadyChangeToPoint) {
-                alreadyChangeToPoint++;
-            } else if(tmp == ORB_SLAM3::seed::SeedType::Seed) {
-                Seed++;
-            } else if (tmp == ORB_SLAM3::seed::SeedType::NotSeed) {
-                NotSeed++;
-            }
-        }
-        std::cout
-            << name
-            <<";  NotSeed = " << NotSeed
-            <<"\t Seed = " << Seed
-            <<"\t ConvergedSeed = " << ConvergedSeed
-            <<"\t alreadyChangeToPoint = " << alreadyChangeToPoint
-            <<"\n";
-    }
-
-    // /// Get coordinates of seed in frame coordinates.
-    // double getSeedPosInFrame(size_t idx) {
-    //     auto tmp = bearing_vecs_.col(idx);
-    //     double res = tmp * getSeedDepth(idx);
-    // }
-    // yhh-depth_filter --------------------------------------
-
 
     //BoW
     DBoW2::BowVector mBowVec;

@@ -56,11 +56,11 @@ namespace ORB_SLAM3
 
         // Project MapPoints using a Similarity Transformation and search matches.
         // Used in loop detection (Loop Closing)
-        int SearchByProjection(KeyFrame* pKF, Sophus::Sim3<float> &Scw, const std::vector<MapPoint*> &vpPoints, std::vector<MapPoint*> &vpMatched, int th, float ratioHamming=1.0){}
+        int SearchByProjection(KeyFrame* pKF, Sophus::Sim3<float> &Scw, const std::vector<MapPoint*> &vpPoints, std::vector<MapPoint*> &vpMatched, int th, float ratioHamming=1.0);
 
         // Project MapPoints using a Similarity Transformation and search matches.
         // Used in Place Recognition (Loop Closing and Merging)
-        int SearchByProjection(KeyFrame* pKF, Sophus::Sim3<float> &Scw, const std::vector<MapPoint*> &vpPoints, const std::vector<KeyFrame*> &vpPointsKFs, std::vector<MapPoint*> &vpMatched, std::vector<KeyFrame*> &vpMatchedKF, int th, float ratioHamming=1.0){}
+        int SearchByProjection(KeyFrame* pKF, Sophus::Sim3<float> &Scw, const std::vector<MapPoint*> &vpPoints, const std::vector<KeyFrame*> &vpPointsKFs, std::vector<MapPoint*> &vpMatched, std::vector<KeyFrame*> &vpMatchedKF, int th, float ratioHamming=1.0);
 
         // Search matches between MapPoints in a KeyFrame and ORB in a Frame.
         // Brute force constrained to ORB that belong to the same vocabulary node (at a certain level)
@@ -74,12 +74,6 @@ namespace ORB_SLAM3
         // Matching to triangulate new MapPoints. Check Epipolar Constraint.
         int SearchForTriangulation(KeyFrame *pKF1, KeyFrame* pKF2,
                                    std::vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo, const bool bCoarse = false);
-        
-        // yhh-depth_filter --------------------------------------
-        // In Tracking, Matching 2d-2d to update depth_filter. Check Epipolar Constraint.
-        int SearchForUpdateDepthFilter(Frame *CurrentFrame, KeyFrame* pKF,
-            std::vector<pair<size_t, size_t> > &vMatchedPairs, const bool bOnlyStereo = false, const bool bCoarse = false);
-        // yhh-depth_filter --------------------------------------
 
         // Search matches between MapPoints seen in KF1 and KF2 transforming by a Sim3 [s12*R12|t12]
         // In the stereo and RGB-D case, s12=1

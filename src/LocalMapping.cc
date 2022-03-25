@@ -23,7 +23,6 @@
 #include "Optimizer.h"
 #include "Converter.h"
 #include "GeometricTools.h"
-#include "depth_filter_util/seed.h"
 
 #include<mutex>
 #include<chrono>
@@ -39,7 +38,7 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, const float bMonocular, 
     mnMatchesInliers = 0;
 
     mbBadImu = false;
-
+    first_ = true;
     mTinit = 0.f;
 
     mNumLM = 0;
@@ -50,6 +49,13 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, const float bMonocular, 
     nLBA_abort = 0;
 #endif
 
+
+}
+
+LocalMapping::~LocalMapping() {
+    if(save_times_.is_open()) {
+        save_times_.close();
+    }
 }
 
 void LocalMapping::SetLoopCloser(LoopClosing* pLoopCloser)
@@ -68,6 +74,15 @@ void LocalMapping::Run()
 
     while(1)
     {
+        // if(first_) {
+        //     std::string save_time_path = "/home/yehonghua/ws/slam/ORB-SLAM/ORB_SLAM3_lastest/ORB_SLAM3/lba_time.txt";
+        //     save_times_.open(save_time_path, std::ios::out | std::ios::trunc);
+        //     if(!save_times_.is_open()) {
+        //         std::cout<<"Failed to open save file !!!"<<std::endl;
+        //     }
+        //     save_times_ << "lba time" << "\n";
+        //     first_ = false;
+        // }
         // Tracking will see that Local Mapping is busy
         SetAcceptKeyFrames(false);
 
@@ -98,22 +113,8 @@ void LocalMapping::Run()
             vdMPCulling_ms.push_back(timeMPCulling);
 #endif
 
-            CreateNewMapPoints();
             // Triangulate new MapPoints
-            // if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
-            if(mpCurrentKeyFrame->mPrevKF) {
-                double depth_mean = mpCurrentKeyFrame->mPrevKF->ComputeSceneMedianDepth(1);
-                double depth_min = 0.1;
-                double depth_max = depth_mean * 2;
-                // yhh-depth_filter --------------------------------------
-                // mapping 线程对应 depth_filter 核心工作内容包括：
-                // 1. 添加当前新的关键帧到深度滤波器 （只有关键帧才会插入到深度滤波器）
-                // 2. 用当前关键帧更新 深度滤波器内部已经存在的关键帧的种子 （和 Tracking 部分一样， 有个问题是
-                    // tracking 是不是已经帮当前关键帧当成普通帧更新过一次深度滤波器内部的关键帧了，这里还这样做会不会
-                    // 重复了（SVO好像也有这样的重复累赘 projectLocalMap中内涵了updateSeed 和 之间调用 UpdateSeeds 累赘））
-                // 3. 将和当前关键帧关联的已经收敛的种子提升为 3D MapPoint (updateSeedToMapPoint)  其它收敛的种子呢???
-                depth_filter_->addKeyframe(mpCurrentKeyFrame, depth_mean, depth_min, depth_max);
-            }
+            CreateNewMapPoints();
 
             mbAbortBA = false;
 
@@ -161,7 +162,16 @@ void LocalMapping::Run()
                         }
 
                         bool bLarge = ((mpTracker->GetMatchesInliers()>75)&&mbMonocular)||((mpTracker->GetMatchesInliers()>100)&&!mbMonocular);
-                        Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA, bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+
+                std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
+                        Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),
+                            num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA,
+                            bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
+                std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
+                double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
+                        std::cout << "optimize_time_gap = " << std::to_string(optimize_time_gap)<<"\n";
+                        // save_times_ << std::to_string(optimize_time_gap) << "\n";
+                        mpCurrentKeyFrame->lba_time_ = std::to_string(optimize_time_gap);
                         b_doneLBA = true;
                     }
                     else
@@ -422,50 +432,6 @@ void LocalMapping::CreateNewMapPoints()
         }
     }
 
-    if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
-        int converg_num = 0;
-        // for(auto keyF : vpNeighKFs) {
-        //     for(size_t i =0; i < keyF->depth_filter_state_.size(); ++i) {
-        //         if(keyF->depth_filter_state_.at(i) == ORB_SLAM3::seed::SeedType::ConvergedSeed) {
-        //             converg_num++;
-        //             keyF->depth_filter_state_.at(i) = ORB_SLAM3::seed::SeedType::NotSeed;
-        //         }
-        //     }
-        // }
-        // std::cout << "LocalMaping : vpNeighKFs.size = "<< vpNeighKFs.size() << "\t converg_num  = " << converg_num << "\n";
-        std::chrono::steady_clock::time_point time0 = std::chrono::steady_clock::now();
-        // std::vector<int, std::vector<pair<size_t, size_t> >> map_vMatchedPairs;
-        depth_filter_->updateSeedsWithKeyFrame(vpNeighKFs, mpCurrentKeyFrame, mpAtlas);
-        std::chrono::steady_clock::time_point time1 = std::chrono::steady_clock::now();
-        double time_gap = 
-            std::chrono::duration_cast<std::chrono::duration<double,std::milli> >
-            (time1 - time0).count();
-        std::cout << "depth_filter_  time_gap = " << time_gap  <<  "\n";
-        // // return;
-        // for(auto keyframe : vpNeighKFs) {
-        //     for(size_t i = 0; i < keyframe->depth_filter_state_.size(); i++) {
-        //         auto& seed_type = keyframe->depth_filter_state_.at(i);
-        //         if(seed_type == seed::SeedType::ConvergedSeed) {
-        //             Eigen::Vector3d p_c = keyframe->bearing_vecs_.col(i) * keyframe->getSeedDepth(i);
-        //             Eigen::Vector3d x3D_double;
-        //             auto T_wc = keyframe->GetPoseInverse();
-        //             x3D_double = T_wc.rotationMatrix() * p_c + T_wc.translation();
-        //             Eigen::Vector3d x3D = x3D_double.cast<float>();
-        //             MapPoint* pMP = new MapPoint(x3D, cur_keyframe, mpAtlas->GetCurrentMap());
-        //             pMP->AddObservation(cur_keyframe, cur_index);
-        //             pMP->AddObservation(ref_keyframe, ref_index);
-        //             cur_keyframe->AddMapPoint(pMP,cur_index);
-        //             ref_keyframe->AddMapPoint(pMP,ref_index);
-        //             pMP->ComputeDistinctiveDescriptors();
-        //             pMP->UpdateNormalAndDepth();
-        //             mpAtlas->AddMapPoint(pMP);
-        //             keyframe->depth_filter_state_.at(i) = seed::SeedType::NotSeed;
-        //         }
-        //     }
-        // }
-    }
-
-
     float th = 0.6f;
 
     ORBmatcher matcher(th,false);
@@ -524,14 +490,6 @@ void LocalMapping::CreateNewMapPoints()
 
         matcher.SearchForTriangulation(mpCurrentKeyFrame,pKF2,vMatchedIndices,false,bCoarse);
 
-
-        // if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
-        //     // depth_filter_->updateSeedsWithKeyFrame(vpNeighKFs, mpCurrentKeyFrame);
-        //     double seed_convergence_sigma2_thresh = 50;
-        //     depth_filter_utils::updateSeedWithKeyFrame(pKF2, mpCurrentKeyFrame, seed_convergence_sigma2_thresh);
-        //     // return;
-        // }
-
         Sophus::SE3<float> sophTcw2 = pKF2->GetPose();
         Eigen::Matrix<float,3,4> eigTcw2 = sophTcw2.matrix3x4();
         Eigen::Matrix<float,3,3> Rcw2 = eigTcw2.block<3,3>(0,0);
@@ -545,7 +503,6 @@ void LocalMapping::CreateNewMapPoints()
         const float &invfx2 = pKF2->invfx;
         const float &invfy2 = pKF2->invfy;
 
-        int new_point = 0;
         // Triangulate each match
         const int nmatches = vMatchedIndices.size();
         for(int ikp=0; ikp<nmatches; ikp++)
@@ -759,7 +716,13 @@ void LocalMapping::CreateNewMapPoints()
                 continue;
 
             // Triangulation is succesfull
-            MapPoint* pMP = new MapPoint(x3D, mpCurrentKeyFrame, mpAtlas->GetCurrentMap());
+            // yhh
+            float invz = invz1;
+            float kp_x = kp1.pt.x;
+            float kp_y = kp1.pt.y;
+            int octave = kp1.octave;
+            float sigma_square = sigmaSquare1;
+            MapPoint* pMP = new MapPoint(x3D, mpCurrentKeyFrame, mpAtlas->GetCurrentMap(), &invz, &kp_x, &kp_y, &sigma_square);
             if (bPointStereo)
                 countStereo++;
             
@@ -775,17 +738,8 @@ void LocalMapping::CreateNewMapPoints()
 
             mpAtlas->AddMapPoint(pMP);
             mlpRecentAddedMapPoints.push_back(pMP);
-
-            new_point++;
         }
-        // std::cout
-        //     << "vMatchedIndices.size ===== " << vMatchedIndices.size()
-        //     << "\t new MapPoint   " << new_point
-        //     << "\n";
     }    
-
-
-    printf("\n");
 }
 
 void LocalMapping::SearchInNeighbors()

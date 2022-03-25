@@ -22,6 +22,15 @@
 namespace ORB_SLAM3
 {
 
+Eigen::Matrix3d skewSymmetric(const Eigen::Vector3d &v) {
+    Eigen::Matrix3d ans;
+    ans <<
+        0.0, -v(2), v(1),
+        v(2), 0.0, -v(0),
+        -v(1), v(0), 0.0;
+    return ans;
+}
+
 ImuCamPose::ImuCamPose(KeyFrame *pKF):its(0)
 {
     // Load IMU pose
@@ -174,6 +183,11 @@ Eigen::Vector2d ImuCamPose::Project(const Eigen::Vector3d &Xw, int cam_idx) cons
     return pCamera[cam_idx]->project(Xc);
 }
 
+Eigen::Vector3d ImuCamPose::ConvertCameraToWorld(const Eigen::Vector3d &P_camera, int cam_idx) const {
+    Eigen::Vector3d P_imu = Rbc[cam_idx] * P_camera + tbc[cam_idx];
+    return Rwb * P_imu + twb;
+}
+
 Eigen::Vector3d ImuCamPose::ProjectStereo(const Eigen::Vector3d &Xw, int cam_idx) const
 {
     Eigen::Vector3d Pc = Rcw[cam_idx] * Xw + tcw[cam_idx];
@@ -256,15 +270,19 @@ void ImuCamPose::UpdateW(const double *pu)
 }
 
 InvDepthPoint::InvDepthPoint(double _rho, double _u, double _v, KeyFrame* pHostKF): u(_u), v(_v), rho(_rho),
-    fx(pHostKF->fx), fy(pHostKF->fy), cx(pHostKF->cx), cy(pHostKF->cy), bf(pHostKF->mbf)
-{
+    fx(pHostKF->fx), fy(pHostKF->fy), cx(pHostKF->cx), cy(pHostKF->cy), bf(pHostKF->mbf) {
+    p_2d_ << (u - cx) / fx, (v - cy) / fy, 1;
+    p_3d_(0) = p_2d_(0) / rho;
+    p_3d_(1) = p_2d_(1) / rho;
+    p_3d_(2) = 1 / rho;
 }
 
-void InvDepthPoint::Update(const double *pu)
-{
+void InvDepthPoint::Update(const double *pu) {
     rho += *pu;
+    p_3d_(0) = p_2d_(0) / rho;
+    p_3d_(1) = p_2d_(1) / rho;
+    p_3d_(2) = 1 / rho;
 }
-
 
 bool VertexPose::read(std::istream& is)
 {
@@ -345,6 +363,62 @@ bool VertexPose::write(std::ostream& os) const
     return os.good();
 }
 
+EdgeMonoInvDepth::EdgeMonoInvDepth(const ImuCamPose &VPose_encode_frame,
+    int encode_cam_idx,  int obs_cam_idx)
+    : encode_cam_idx_(encode_cam_idx), obs_cam_idx_(obs_cam_idx) {
+    VPose_encode_frame_ = VPose_encode_frame;
+    resize(2);
+    // resize(3);
+    // setInformation();
+}
+
+void EdgeMonoInvDepth::linearizeOplus() {
+    const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+    const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
+
+    // const Eigen::Matrix3d &Rwb0 = VPose_encode_frame_.Rwb;
+    // const Eigen::Vector3d &twb0 = VPose_encode_frame_.twb;
+    const Eigen::Matrix3d &Rc0w = VPose_encode_frame_.Rcw[encode_cam_idx_];
+    const Eigen::Vector3d &tc0w = VPose_encode_frame_.tcw[encode_cam_idx_];
+    const Eigen::Matrix3d &Rcb_0 = VPose_encode_frame_.Rcb[encode_cam_idx_];
+    const Eigen::Vector3d &tcb_0 = VPose_encode_frame_.tcb[encode_cam_idx_];
+    // const Eigen::Matrix3d &Rbc_0 = VPose_encode_frame_.Rbc[encode_cam_idx_];
+    // const Eigen::Vector3d &tbc_0 = VPose_encode_frame_.tbc[encode_cam_idx_];
+
+    const Eigen::Matrix3d &Rwb1 = VPose_obs_frame->estimate().Rwb;
+    const Eigen::Vector3d &twb1 = VPose_obs_frame->estimate().twb;
+    const Eigen::Matrix3d &Rc1w = VPose_obs_frame->estimate().Rcw[obs_cam_idx_];
+    const Eigen::Vector3d &tc1w = VPose_obs_frame->estimate().tcw[obs_cam_idx_];
+    const Eigen::Matrix3d &Rcb_1 = VPose_obs_frame->estimate().Rcb[obs_cam_idx_];
+    // const Eigen::Vector3d &tcb_1 = VPose_obs_frame->estimate().tcb[obs_cam_idx_];
+    // const Eigen::Matrix3d &Rbc_1 = VPose_obs_frame->estimate().Rbc[obs_cam_idx_];
+    // const Eigen::Vector3d &tbc_1 = VPose_obs_frame->estimate().tbc[obs_cam_idx_];
+
+    Eigen::Vector3d P_2d_c0 = point_vertex->estimate().p_2d_;
+    Eigen::Vector3d P_c0 = point_vertex->estimate().p_3d_;
+    Eigen::Vector3d P_w = Rc0w.inverse() * (P_c0 - tc0w);
+    Eigen::Vector3d P_c1 = Rc1w * P_w + tc1w;
+    const Eigen::Matrix<double,2,3> proj_jac = VPose_obs_frame->estimate().pCamera[obs_cam_idx_]->projectJac(P_c1);
+
+    // Jacobians wrt InvDepth: 2*1
+    _jacobianOplus[0].setZero();
+    double inv_dep_i = point_vertex->estimate().rho;
+    _jacobianOplus[0] = -1 * proj_jac * Rc1w * Rc0w.inverse() * P_2d_c0 * -1 / (inv_dep_i * inv_dep_i);
+
+    // Jacobians wrt obs frame pose: 2*6
+    _jacobianOplus[1].setZero();
+    Eigen::Matrix<double, 3, 6> jaco_j;
+    // Eigen::Vector3d point_3d = Rwb1.inverse() * (P_w - twb1);
+    Eigen::Vector3d point_3d = Rwb1.inverse() * P_w;
+    jaco_j.leftCols<3>() = Rcb_1 * ORB_SLAM3::skewSymmetric(point_3d);
+    jaco_j.rightCols<3>() = Rcb_1 * (-1) * Rwb1.inverse();
+        // Eigen::Matrix<double, 3, 6> jaco_j;
+        // jaco_j.leftCols<3>() = ric.transpose() * -Rj.transpose();
+        // jaco_j.rightCols<3>() =
+        //     ric.transpose() * Utility::skewSymmetric(pts_imu_j);
+    _jacobianOplus[1] = -1 * proj_jac * jaco_j;
+
+}
 
 void EdgeMono::linearizeOplus()
 {
@@ -507,9 +581,6 @@ EdgeInertial::EdgeInertial(IMU::Preintegrated *pInt):JRg(pInt->JRg.cast<double>(
     Info = es.eigenvectors()*eigs.asDiagonal()*es.eigenvectors().transpose();
     setInformation(Info);
 }
-
-
-
 
 void EdgeInertial::computeError()
 {
