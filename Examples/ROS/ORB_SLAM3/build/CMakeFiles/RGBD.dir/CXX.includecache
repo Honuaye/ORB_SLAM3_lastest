@@ -1,0 +1,32 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/yehonghua/ws/slam/ORB-SLAM/ORB_SLAM3_lastest/ORB_SLAM3/Examples/ROS/ORB_SLAM3/src/ros_rgbd.cc
+iostream
+-
+algorithm
+-
+fstream
+-
+chrono
+-
+ros/ros.h
+-
+cv_bridge/cv_bridge.h
+-
+message_filters/subscriber.h
+-
+message_filters/time_synchronizer.h
+-
+message_filters/sync_policies/approximate_time.h
+-
+opencv2/core/core.hpp
+-
+../../../include/System.h
+/home/yehonghua/ws/slam/ORB-SLAM/ORB_SLAM3_lastest/ORB_SLAM3/Examples/include/System.h
+
