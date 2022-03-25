@@ -85,8 +85,18 @@ public:
 
     void static LocalInertialBA(KeyFrame* pKF, bool *pbStopFlag, Map *pMap,
         int& num_fixedKF, int& num_OptKF, int& num_MPs, int& num_edges, bool bLarge = false,
-        bool bRecInit = false,
-        std::ofstream* save_times = nullptr);
+        bool bRecInit = false);
+
+    void static OptimizeNewPoints(KeyFrame* pKF, Map *pMap);
+    void static OptimizePoint(MapPoint* map_point);
+    void static updateHessianGradientUnitPlane(
+        const Eigen::Vector3f& p_obs_2f,
+        const Eigen::Vector3f& p_in_f,
+        const Eigen::Matrix3f& R_f_w,
+        Eigen::Matrix3f& A,
+        Eigen::Vector3f& b,
+        float& new_chi2);
+
     void static MergeInertialBA(KeyFrame* pCurrKF, KeyFrame* pMergeKF, bool *pbStopFlag, Map *pMap, LoopClosing::KeyFrameAndPose &corrPoses);
 
     // Local BA in welding area when two maps are merged

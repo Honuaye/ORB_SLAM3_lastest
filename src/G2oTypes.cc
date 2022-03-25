@@ -363,30 +363,23 @@ bool VertexPose::write(std::ostream& os) const
     return os.good();
 }
 
-EdgeMonoInvDepth::EdgeMonoInvDepth(const ImuCamPose &VPose_encode_frame,
-    int encode_cam_idx,  int obs_cam_idx)
-    : encode_cam_idx_(encode_cam_idx), obs_cam_idx_(obs_cam_idx) {
-    VPose_encode_frame_ = VPose_encode_frame;
-    resize(2);
-    // resize(3);
-    // setInformation();
-}
-
-void EdgeMonoInvDepth::linearizeOplus() {
+void EdgeStereoInvDepthObsFrame::linearizeOplus() {
     const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
     const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
 
-    // const Eigen::Matrix3d &Rwb0 = VPose_encode_frame_.Rwb;
-    // const Eigen::Vector3d &twb0 = VPose_encode_frame_.twb;
-    const Eigen::Matrix3d &Rc0w = VPose_encode_frame_.Rcw[encode_cam_idx_];
-    const Eigen::Vector3d &tc0w = VPose_encode_frame_.tcw[encode_cam_idx_];
-    const Eigen::Matrix3d &Rcb_0 = VPose_encode_frame_.Rcb[encode_cam_idx_];
-    const Eigen::Vector3d &tcb_0 = VPose_encode_frame_.tcb[encode_cam_idx_];
-    // const Eigen::Matrix3d &Rbc_0 = VPose_encode_frame_.Rbc[encode_cam_idx_];
-    // const Eigen::Vector3d &tbc_0 = VPose_encode_frame_.tbc[encode_cam_idx_];
+    // const Eigen::Matrix3d &Rwb0 = VPose_anchored_frame_.Rwb;
+    // const Eigen::Vector3d &twb0 = VPose_anchored_frame_.twb;
+    const Eigen::Matrix3d &Rc0w = VPose_anchored_frame_.Rcw[anchored_cam_idx_];
+    Eigen::Matrix3d Rwc0 = Rc0w.inverse();
+    const Eigen::Vector3d &tc0w = VPose_anchored_frame_.tcw[anchored_cam_idx_];
+    // const Eigen::Matrix3d &Rcb_0 = VPose_anchored_frame_.Rcb[anchored_cam_idx_];
+    // const Eigen::Vector3d &tcb_0 = VPose_anchored_frame_.tcb[anchored_cam_idx_];
+    // const Eigen::Matrix3d &Rbc_0 = VPose_anchored_frame_.Rbc[anchored_cam_idx_];
+    // const Eigen::Vector3d &tbc_0 = VPose_anchored_frame_.tbc[anchored_cam_idx_];
 
     const Eigen::Matrix3d &Rwb1 = VPose_obs_frame->estimate().Rwb;
-    const Eigen::Vector3d &twb1 = VPose_obs_frame->estimate().twb;
+    Eigen::Matrix3d Rb1w = Rwb1.inverse();
+    // const Eigen::Vector3d &twb1 = VPose_obs_frame->estimate().twb;
     const Eigen::Matrix3d &Rc1w = VPose_obs_frame->estimate().Rcw[obs_cam_idx_];
     const Eigen::Vector3d &tc1w = VPose_obs_frame->estimate().tcw[obs_cam_idx_];
     const Eigen::Matrix3d &Rcb_1 = VPose_obs_frame->estimate().Rcb[obs_cam_idx_];
@@ -394,29 +387,48 @@ void EdgeMonoInvDepth::linearizeOplus() {
     // const Eigen::Matrix3d &Rbc_1 = VPose_obs_frame->estimate().Rbc[obs_cam_idx_];
     // const Eigen::Vector3d &tbc_1 = VPose_obs_frame->estimate().tbc[obs_cam_idx_];
 
-    Eigen::Vector3d P_2d_c0 = point_vertex->estimate().p_2d_;
-    Eigen::Vector3d P_c0 = point_vertex->estimate().p_3d_;
-    Eigen::Vector3d P_w = Rc0w.inverse() * (P_c0 - tc0w);
+    const Eigen::Vector3d &P_2d_c0 = point_vertex->estimate().p_2d_;
+    const Eigen::Vector3d &P_c0 = point_vertex->estimate().p_3d_;
+    Eigen::Vector3d P_w = Rwc0 * (P_c0 - tc0w);
     Eigen::Vector3d P_c1 = Rc1w * P_w + tc1w;
     const Eigen::Matrix<double,2,3> proj_jac = VPose_obs_frame->estimate().pCamera[obs_cam_idx_]->projectJac(P_c1);
 
     // Jacobians wrt InvDepth: 2*1
     _jacobianOplus[0].setZero();
-    double inv_dep_i = point_vertex->estimate().rho;
-    _jacobianOplus[0] = -1 * proj_jac * Rc1w * Rc0w.inverse() * P_2d_c0 * -1 / (inv_dep_i * inv_dep_i);
+    const double &inv_dep_i = point_vertex->estimate().rho;
+    _jacobianOplus[0] = -1 * proj_jac * Rc1w * Rwc0 * P_2d_c0 * -1 / (inv_dep_i * inv_dep_i);
 
     // Jacobians wrt obs frame pose: 2*6
     _jacobianOplus[1].setZero();
     Eigen::Matrix<double, 3, 6> jaco_j;
-    // Eigen::Vector3d point_3d = Rwb1.inverse() * (P_w - twb1);
-    Eigen::Vector3d point_3d = Rwb1.inverse() * P_w;
+    // Eigen::Vector3d point_3d = Rb1w * (P_w - twb1);
+    Eigen::Vector3d point_3d = Rb1w * P_w;
     jaco_j.leftCols<3>() = Rcb_1 * ORB_SLAM3::skewSymmetric(point_3d);
-    jaco_j.rightCols<3>() = Rcb_1 * (-1) * Rwb1.inverse();
-        // Eigen::Matrix<double, 3, 6> jaco_j;
-        // jaco_j.leftCols<3>() = ric.transpose() * -Rj.transpose();
-        // jaco_j.rightCols<3>() =
-        //     ric.transpose() * Utility::skewSymmetric(pts_imu_j);
+    jaco_j.rightCols<3>() = Rcb_1 * (-1) * Rb1w;
     _jacobianOplus[1] = -1 * proj_jac * jaco_j;
+
+}
+
+void EdgeMonoInvDepth::linearizeOplus() {
+    const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+
+    const Eigen::Matrix3d &Rc0w = VPose_anchored_frame_.Rcw[anchored_cam_idx_];
+    Eigen::Matrix3d Rwc0 = Rc0w.inverse();
+    const Eigen::Vector3d &tc0w = VPose_anchored_frame_.tcw[anchored_cam_idx_];
+
+    const Eigen::Matrix3d &Rc1w = VPose_obs_frame_.Rcw[obs_cam_idx_];
+    const Eigen::Vector3d &tc1w = VPose_obs_frame_.tcw[obs_cam_idx_];
+
+    const Eigen::Vector3d &P_2d_c0 = point_vertex->estimate().p_2d_;
+    const Eigen::Vector3d &P_c0 = point_vertex->estimate().p_3d_;
+    Eigen::Vector3d P_w = Rwc0 * (P_c0 - tc0w);
+    Eigen::Vector3d P_c1 = Rc1w * P_w + tc1w;
+    const Eigen::Matrix<double,2,3> proj_jac = VPose_obs_frame_.pCamera[obs_cam_idx_]->projectJac(P_c1);
+
+    // Jacobians wrt InvDepth: 2*1
+    _jacobianOplusXi.setZero();
+    const double &inv_dep_i = point_vertex->estimate().rho;
+    _jacobianOplusXi = -1 * proj_jac * Rc1w * Rwc0 * P_2d_c0 * -1 / (inv_dep_i * inv_dep_i);
 
 }
 

@@ -342,17 +342,24 @@ class VertexInvDepth : public g2o::BaseVertex<1,InvDepthPoint> {
 };
 
 // // yhh
-class EdgeMonoInvDepth : public g2o::BaseMultiEdge<2, Eigen::Vector2d> {
+class EdgeStereoInvDepthObsFrame : public g2o::BaseMultiEdge<2, Eigen::Vector2d> {
  public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    EdgeMonoInvDepth(const ImuCamPose &VPose_encode_frame, int encode_cam_idx = 0,  int obs_cam_idx = 0);
+    EdgeStereoInvDepthObsFrame(const ImuCamPose &VPose_anchored_frame, int anchored_cam_idx,  int obs_cam_idx)
+        : anchored_cam_idx_(anchored_cam_idx), obs_cam_idx_(obs_cam_idx) {
+        VPose_anchored_frame_ = VPose_anchored_frame;
+        resize(2);
+        // resize(3);
+        // setInformation();
+    }
+
     virtual bool read(std::istream& is){return false;}
     virtual bool write(std::ostream& os) const{return false;}
     void computeError(){
         const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
         const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
         const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
-        Eigen::Vector3d p_w = VPose_encode_frame_.ConvertCameraToWorld(p_3d_f0, encode_cam_idx_);
+        Eigen::Vector3d p_w = VPose_anchored_frame_.ConvertCameraToWorld(p_3d_f0, anchored_cam_idx_);
         const Eigen::Vector2d obs(_measurement);
         _error = obs - VPose_obs_frame->estimate().Project(p_w, obs_cam_idx_);
     }
@@ -361,16 +368,51 @@ class EdgeMonoInvDepth : public g2o::BaseMultiEdge<2, Eigen::Vector2d> {
         const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
         const VertexPose* VPose_obs_frame = static_cast<const VertexPose*>(_vertices[1]);
         const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
-        Eigen::Vector3d p_w = VPose_encode_frame_.ConvertCameraToWorld(p_3d_f0, encode_cam_idx_);
-        return VPose_encode_frame_.isDepthPositive(p_w, encode_cam_idx_) ||
+        Eigen::Vector3d p_w = VPose_anchored_frame_.ConvertCameraToWorld(p_3d_f0, anchored_cam_idx_);
+        return VPose_anchored_frame_.isDepthPositive(p_w, anchored_cam_idx_) ||
             VPose_obs_frame->estimate().isDepthPositive(p_w, obs_cam_idx_);
     }
 
     virtual void linearizeOplus();
  public:
     const int obs_cam_idx_;
-    const int encode_cam_idx_;
-    ImuCamPose VPose_encode_frame_;
+    const int anchored_cam_idx_;
+    ImuCamPose VPose_anchored_frame_;
+};
+
+class EdgeMonoInvDepth : public g2o::BaseUnaryEdge<2,Eigen::Vector2d,VertexInvDepth> {
+ public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    EdgeMonoInvDepth(const ImuCamPose &VPose_anchored_frame, const ImuCamPose &VPose_obs_frame,
+        int anchored_cam_idx,  int obs_cam_idx)
+        : anchored_cam_idx_(anchored_cam_idx), obs_cam_idx_(obs_cam_idx) {
+        VPose_anchored_frame_ = VPose_anchored_frame;
+        VPose_obs_frame_ = VPose_obs_frame;
+    }
+    virtual bool read(std::istream& is){return false;}
+    virtual bool write(std::ostream& os) const{return false;}
+    void computeError(){
+        const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+        const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
+        Eigen::Vector3d p_w = VPose_anchored_frame_.ConvertCameraToWorld(p_3d_f0, anchored_cam_idx_);
+        const Eigen::Vector2d obs(_measurement);
+        _error = obs - VPose_obs_frame_.Project(p_w, obs_cam_idx_);
+    }
+
+    bool isDepthPositive() {
+        const VertexInvDepth* point_vertex = static_cast<const VertexInvDepth*>(_vertices[0]);
+        const Eigen::Vector3d &p_3d_f0 = point_vertex->estimate().p_3d_;
+        Eigen::Vector3d p_w = VPose_anchored_frame_.ConvertCameraToWorld(p_3d_f0, anchored_cam_idx_);
+        return VPose_anchored_frame_.isDepthPositive(p_w, anchored_cam_idx_) ||
+            VPose_obs_frame_.isDepthPositive(p_w, obs_cam_idx_);
+    }
+
+    virtual void linearizeOplus();
+ public:
+    const int obs_cam_idx_;
+    const int anchored_cam_idx_;
+    ImuCamPose VPose_anchored_frame_;
+    ImuCamPose VPose_obs_frame_;
 };
 
 

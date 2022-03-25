@@ -1793,6 +1793,7 @@ void Tracking::ResetFrameIMU()
 
 void Tracking::Track()
 {
+    std::cout<<"vPMapPoints 1 = "<<mCurrentFrame.GetMapPoints().size()<<"\n";
 
     if (bStepByStep)
     {
@@ -1932,16 +1933,13 @@ void Tracking::Track()
         // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
         if(!mbOnlyTracking)
         {
-
             // State OK
             // Local Mapping is activated. This is the normal behaviour, unless
             // you explicitly activate the "only tracking" mode.
             if(mState==OK)
             {
-
                 // Local Mapping might have changed some MapPoints tracked in last frame
                 CheckReplacedInLastFrame();
-
                 if((!mbVelocity && !pCurrentMap->isImuInitialized()) || mCurrentFrame.mnId<mnLastRelocFrameId+2)
                 {
                     Verbose::PrintMess("TRACK: Track with respect to the reference KF ", Verbose::VERBOSITY_DEBUG);
@@ -1950,9 +1948,13 @@ void Tracking::Track()
                 else
                 {
                     Verbose::PrintMess("TRACK: Track with motion model", Verbose::VERBOSITY_DEBUG);
+                    std::cout<<"vPMapPoints 1-1 = "<<mCurrentFrame.GetMapPoints().size()<<"\n";
+
                     bOK = TrackWithMotionModel();
+                    std::cout<<"vPMapPoints A TrackWithMotionModel = "<<mCurrentFrame.GetMapPoints().size()<<"\n";
                     if(!bOK)
                         bOK = TrackReferenceKeyFrame();
+                    std::cout<<"vPMapPoints A TrackReferenceKeyFrame = "<<mCurrentFrame.GetMapPoints().size()<<"\n";
                 }
 
 
@@ -2033,77 +2035,6 @@ void Tracking::Track()
             }
 
         }
-        else
-        {
-            // Localization Mode: Local Mapping is deactivated (TODO Not available in inertial mode)
-            if(mState==LOST)
-            {
-                if(mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
-                    Verbose::PrintMess("IMU. State LOST", Verbose::VERBOSITY_NORMAL);
-                bOK = Relocalization();
-            }
-            else
-            {
-                if(!mbVO)
-                {
-                    // In last frame we tracked enough MapPoints in the map
-                    if(mbVelocity)
-                    {
-                        bOK = TrackWithMotionModel();
-                    }
-                    else
-                    {
-                        bOK = TrackReferenceKeyFrame();
-                    }
-                }
-                else
-                {
-                    // In last frame we tracked mainly "visual odometry" points.
-
-                    // We compute two camera poses, one from motion model and one doing relocalization.
-                    // If relocalization is sucessfull we choose that solution, otherwise we retain
-                    // the "visual odometry" solution.
-
-                    bool bOKMM = false;
-                    bool bOKReloc = false;
-                    vector<MapPoint*> vpMPsMM;
-                    vector<bool> vbOutMM;
-                    Sophus::SE3f TcwMM;
-                    if(mbVelocity)
-                    {
-                        bOKMM = TrackWithMotionModel();
-                        vpMPsMM = mCurrentFrame.mvpMapPoints;
-                        vbOutMM = mCurrentFrame.mvbOutlier;
-                        TcwMM = mCurrentFrame.GetPose();
-                    }
-                    bOKReloc = Relocalization();
-
-                    if(bOKMM && !bOKReloc)
-                    {
-                        mCurrentFrame.SetPose(TcwMM);
-                        mCurrentFrame.mvpMapPoints = vpMPsMM;
-                        mCurrentFrame.mvbOutlier = vbOutMM;
-
-                        if(mbVO)
-                        {
-                            for(int i =0; i<mCurrentFrame.N; i++)
-                            {
-                                if(mCurrentFrame.mvpMapPoints[i] && !mCurrentFrame.mvbOutlier[i])
-                                {
-                                    mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
-                                }
-                            }
-                        }
-                    }
-                    else if(bOKReloc)
-                    {
-                        mbVO = false;
-                    }
-
-                    bOK = bOKReloc || bOKMM;
-                }
-            }
-        }
 
         if(!mCurrentFrame.mpReferenceKF)
             mCurrentFrame.mpReferenceKF = mpReferenceKF;
@@ -2127,8 +2058,11 @@ void Tracking::Track()
                 bOK = TrackLocalMap();
 
             }
-            if(!bOK)
+            if(!bOK) {
                 cout << "Fail to track local map!" << endl;
+                cout << "Fail to track local map!" << endl;
+                cout << "Fail to track local map! \n " << endl;
+            }
         }
         else
         {
@@ -2138,6 +2072,10 @@ void Tracking::Track()
             if(bOK && !mbVO)
                 bOK = TrackLocalMap();
         }
+
+        std::cout<<"vPMapPoints A TrackLocalMap = "<<mCurrentFrame.GetMapPoints().size()<<"\n\n";
+
+
 
         if(bOK)
             mState = OK;
@@ -2952,9 +2890,46 @@ bool Tracking::TrackLocalMap()
     // We have an estimation of the camera pose and some map points tracked in the frame.
     // We retrieve the local map and try to find matches to points in the local map.
     mTrackedFr++;
-
+    // yhh
+    std::cout<<"vPMapPoints B UpdateLocalMap = "<<mCurrentFrame.GetMapPoints().size()<<"\n\n";
     UpdateLocalMap();
+    std::cout<<"vPMapPoints A UpdateLocalMap = "<<mCurrentFrame.GetMapPoints().size()<<"\n\n";
     SearchLocalPoints();
+    // search current_frame correspond with overlap_kfs_(SVO用了10帧共视觉的关键帧)
+    // std::vector<pair<size_t, size_t> > vMatchedPairs_all;
+    std::vector<pair<size_t, size_t> > vMatchedPairs1;
+    std::vector<pair<size_t, size_t> > vMatchedPairs2;
+
+    {
+    std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
+        mCurrentFrame.ComputeBoW();
+        ORBmatcher matcher1(0.4, true);
+        if( mvpLocalKeyFrames_pair_.size() > 2) {
+            bool flag = false;
+            matcher1.SearchForUpdateDepthFilter(
+                &mCurrentFrame, mvpLocalKeyFrames_pair_.at(0).first, vMatchedPairs1);
+            matcher1.SearchForUpdateDepthFilter(
+                &mCurrentFrame, mvpLocalKeyFrames_pair_.at(1).first, vMatchedPairs2);
+
+        }
+    std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
+    double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
+    std::cout << "search depth_filter update time = " << std::to_string(optimize_time_gap)<<"\n";
+
+    }
+    // vMatchedPairs_all.insert(vMatchedPairs1.begin(), vMatchedPairs1.end());
+    // vMatchedPairs_all.insert(vMatchedPairs2.begin(), vMatchedPairs2.end());
+    std::cout
+        <<"vPMapPoints A SearchLocalPoints = "<<mCurrentFrame.GetMapPoints().size()
+        <<"\t mvpMapPoints.size = "<<mCurrentFrame.mvpMapPoints.size()
+        <<"\t mvKeys.size = "<<mCurrentFrame.mvKeys.size()
+        <<"\t mvKeysUn.size = "<<mCurrentFrame.mvKeysUn.size()
+        <<"\t vMatchedPairs_all.size = "<<vMatchedPairs1.size()
+        <<"\t COV_size = "<<mvpLocalKeyFrames_pair_.at(0).second
+        <<"\t vMatchedPairs_all.size = "<<vMatchedPairs2.size()
+        <<"\t COV_size = "<<mvpLocalKeyFrames_pair_.at(1).second
+        // <<"\t vMatchedPairs_all.size = "<<vMatchedPairs_all.size()
+        <<"\n\n";
 
     // TOO check outliers before PO
     int aux1 = 0, aux2=0;
@@ -2965,10 +2940,16 @@ bool Tracking::TrackLocalMap()
             if(mCurrentFrame.mvbOutlier[i])
                 aux2++;
         }
+    std::cout
+        <<"LocalMap 1 : aux1 = " << aux1
+        <<"\t aux2 = " << aux2
+        << "\n";
 
     int inliers;
-    if (!mpAtlas->isImuInitialized())
+    if (!mpAtlas->isImuInitialized()) {
+        printf("PoseOptimization 0 \n");
         Optimizer::PoseOptimization(&mCurrentFrame);
+    }
     else
     {
         if(mCurrentFrame.mnId<=mnLastRelocFrameId+mnFramesToResetIMU)
@@ -2982,19 +2963,21 @@ bool Tracking::TrackLocalMap()
             if(!mbMapUpdated) //  && (mnMatchesInliers>30))
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastFrame ", Verbose::VERBOSITY_DEBUG);
-                std::cout
-                    << std::to_string(mCurrentFrame.mTimeStamp)
-                    << ":\t PoseInertialOptimizationLastFrame "
-                    <<std::endl;
+                // std::cout
+                //     << std::to_string(mCurrentFrame.mTimeStamp)
+                //     << ":\t PoseInertialOptimizationLastFrame "
+                //     <<std::endl;
+                printf("PoseInertialOptimizationLastFrame 0 \n");
                 inliers = Optimizer::PoseInertialOptimizationLastFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
             else
             {
                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastKeyFrame ", Verbose::VERBOSITY_DEBUG);
-                std::cout
-                    << std::to_string(mCurrentFrame.mTimeStamp)
-                    << ":\t PoseInertialOptimizationLastKeyFrame "
-                    <<std::endl;
+                // std::cout
+                //     << std::to_string(mCurrentFrame.mTimeStamp)
+                //     << ":\t PoseInertialOptimizationLastKeyFrame "
+                //     <<std::endl;
+                printf("PoseInertialOptimizationLastKeyFrame 0 \n");
                 inliers = Optimizer::PoseInertialOptimizationLastKeyFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
             }
         }
@@ -3008,6 +2991,10 @@ bool Tracking::TrackLocalMap()
             if(mCurrentFrame.mvbOutlier[i])
                 aux2++;
         }
+    std::cout
+        <<"LocalMap 2 : aux1 = " << aux1
+        <<"\t aux2 = " << aux2
+        << "\n";
 
     mnMatchesInliers = 0;
 
@@ -3031,7 +3018,7 @@ bool Tracking::TrackLocalMap()
                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
         }
     }
-    std::cout << "mnMatchesInliers  = "<<mnMatchesInliers<<"\n";
+    // std::cout << "mnMatchesInliers  = "<<mnMatchesInliers<<"\n";
 
     // Decide if the tracking was succesful
     // More restrictive if there was a relocalization recently
@@ -3438,7 +3425,6 @@ void Tracking::UpdateLocalPoints()
     mvpLocalMapPoints.clear();
 
     int count_pts = 0;
-
     for(vector<KeyFrame*>::const_reverse_iterator itKF=mvpLocalKeyFrames.rbegin(), itEndKF=mvpLocalKeyFrames.rend(); itKF!=itEndKF; ++itKF)
     {
         KeyFrame* pKF = *itKF;
@@ -3446,7 +3432,7 @@ void Tracking::UpdateLocalPoints()
 
         for(vector<MapPoint*>::const_iterator itMP=vpMPs.begin(), itEndMP=vpMPs.end(); itMP!=itEndMP; itMP++)
         {
-
+            // TODO yhh
             MapPoint* pMP = *itMP;
             if(!pMP)
                 continue;
@@ -3516,6 +3502,9 @@ void Tracking::UpdateLocalKeyFrames()
     int max=0;
     KeyFrame* pKFmax= static_cast<KeyFrame*>(NULL);
 
+    // map<KeyFrame*,int> keyframeCounter;
+    // std::vector<std::pair<KeyFrame*, int>> mvpLocalKeyFrames_pair_;
+    mvpLocalKeyFrames_pair_.clear();
     mvpLocalKeyFrames.clear();
     mvpLocalKeyFrames.reserve(3*keyframeCounter.size());
 
@@ -3534,8 +3523,25 @@ void Tracking::UpdateLocalKeyFrames()
         }
 
         mvpLocalKeyFrames.push_back(pKF);
+        mvpLocalKeyFrames_pair_.push_back(std::make_pair(pKF, it->second));
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
     }
+    // sort mvpLocalKeyFrames_pair_
+        int number_to_update_depth_filter = 4;
+        int tmp_size = mvpLocalKeyFrames_pair_.size();
+        size_t N = std::min(number_to_update_depth_filter, tmp_size);
+        std::nth_element(
+            mvpLocalKeyFrames_pair_.begin(), mvpLocalKeyFrames_pair_.begin() + N, mvpLocalKeyFrames_pair_.end(), 
+            [](const std::pair<KeyFrame*, int>& lhs, const std::pair<KeyFrame*, int>& rhs) {
+                return lhs.second > rhs.second;
+            }
+            );
+    std::cout
+        << "max = " << max
+        << "\t mvpLocalKeyFrames_pair_.at(0).second = " << mvpLocalKeyFrames_pair_.at(0).second
+        << "\t mvpLocalKeyFrames_pair_.at(N).second = " << mvpLocalKeyFrames_pair_.at(N-1).second
+        << "\n";
+
 
     // Include also some not-already-included keyframes that are neighbors to already-included keyframes
     for(vector<KeyFrame*>::const_iterator itKF=mvpLocalKeyFrames.begin(), itEndKF=mvpLocalKeyFrames.end(); itKF!=itEndKF; itKF++)

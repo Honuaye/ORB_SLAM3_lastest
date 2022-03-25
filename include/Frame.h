@@ -365,6 +365,11 @@ public:
         }
         cout << "Point distribution in Frame: left-> " << left << " --- right-> " << right << endl;
     }
+    set<MapPoint*> GetMapPoints();
+
+    MapPoint* GetMapPoint(const size_t &idx) {
+        return mvpMapPoints[idx];
+    }
 
     Sophus::SE3<double> T_test;
 };

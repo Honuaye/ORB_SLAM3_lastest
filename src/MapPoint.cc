@@ -46,6 +46,7 @@ MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap, floa
 {
     SetWorldPos(Pos);
     creat_in_keyframe_ = true;
+    new_born_ = true;
     mpHostKF = pRefKF;
     // pRefKF->ProjectPointUnDistort(Pos, &mInvDepth, &mInitU, &mInitV);
     if(inv_z) {
@@ -69,7 +70,6 @@ MapPoint::MapPoint(const Eigen::Vector3f &Pos, KeyFrame *pRefKF, Map* pMap, floa
         init_sigma_square_ = 0.0;
     }
     inv_optimizing_ = false;
-    keframe_index_in_current_ba = -1;
     mNormalVector.setZero();
 
     mbTrackInViewR = false;

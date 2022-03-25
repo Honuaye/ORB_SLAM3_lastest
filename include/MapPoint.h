@@ -202,9 +202,10 @@ public:
 
 
     // Fopr inverse depth optimization
+    bool new_born_;
     bool creat_in_keyframe_;
     bool inv_optimizing_;
-    int keframe_index_in_current_ba;
+    // Eigen::Vector3f t_cw_;
 
     double mInvDepth;
     double mInitU;

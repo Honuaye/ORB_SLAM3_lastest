@@ -1095,25 +1095,25 @@ void System::SaveKeyFrameTrajectoryEuRoC(const string &filename)
         KeyFrame* pKF = vpKFs[i];
 
        // pKF->SetPose(pKF->GetPose()*Two);
+        if(pKF->lba_time_ > 1.0 && pKF->lba_time_ < 400.0) {
+            if(!pKF || pKF->isBad()) continue;
+            if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
+            {
+                Sophus::SE3f Twb = pKF->GetImuPose();
+                Eigen::Quaternionf q = Twb.unit_quaternion();
+                Eigen::Vector3f twb = Twb.translation();
+                f << setprecision(6) << 1e9*pKF->mTimeStamp  << " " <<  setprecision(9) << twb(0) << " " << twb(1) << " " << twb(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
 
-        if(!pKF || pKF->isBad())
-            continue;
-        if (mSensor == IMU_MONOCULAR || mSensor == IMU_STEREO || mSensor==IMU_RGBD)
-        {
-            Sophus::SE3f Twb = pKF->GetImuPose();
-            Eigen::Quaternionf q = Twb.unit_quaternion();
-            Eigen::Vector3f twb = Twb.translation();
-            f << setprecision(6) << 1e9*pKF->mTimeStamp  << " " <<  setprecision(9) << twb(0) << " " << twb(1) << " " << twb(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
-
+            }
+            else
+            {
+                Sophus::SE3f Twc = pKF->GetPoseInverse();
+                Eigen::Quaternionf q = Twc.unit_quaternion();
+                Eigen::Vector3f t = Twc.translation();
+                f << setprecision(6) << 1e9*pKF->mTimeStamp << " " <<  setprecision(9) << t(0) << " " << t(1) << " " << t(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
+            }
+            f_t << 1e9*pKF->mTimeStamp << " "<< std::to_string(pKF->lba_time_) <<"\n";
         }
-        else
-        {
-            Sophus::SE3f Twc = pKF->GetPoseInverse();
-            Eigen::Quaternionf q = Twc.unit_quaternion();
-            Eigen::Vector3f t = Twc.translation();
-            f << setprecision(6) << 1e9*pKF->mTimeStamp << " " <<  setprecision(9) << t(0) << " " << t(1) << " " << t(2) << " " << q.x() << " " << q.y() << " " << q.z() << " " << q.w() << endl;
-        }
-        f_t << 1e9*pKF->mTimeStamp << " "<< pKF->lba_time_<<"\n";
     }
     f.close();
     f_t.close();

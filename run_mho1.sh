@@ -1,1 +1,0 @@
- ./Examples/Monocular-Inertial/mono_inertial_euroc Vocabulary/ORBvoc.txt  ./Examples/Monocular-Inertial/EuRoC.yaml  ~/ws/Dataset/EuRoC/data/MH_01_easy/   ./Examples/Monocular-Inertial/EuRoC_TimeStamps/MH01.txt

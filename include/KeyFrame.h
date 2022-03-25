@@ -314,7 +314,7 @@ public:
     const long unsigned int mnFrameId;
 
     const double mTimeStamp;
-    string lba_time_;
+    double lba_time_;
 
     // Grid (to speed up feature matching)
     const int mnGridCols;

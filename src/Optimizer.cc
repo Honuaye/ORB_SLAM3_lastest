@@ -2380,10 +2380,105 @@ int Optimizer::OptimizeSim3(KeyFrame *pKF1, KeyFrame *pKF2, vector<MapPoint *> &
     return nIn;
 }
 
+// yhh-p
+void Optimizer::OptimizeNewPoints(KeyFrame* pKF, Map *pMap) {
+    Map* pCurrentMap = pKF->GetMap();
+    for(auto map_point : pKF->GetMapPoints()) {
+        // get mutex TODO
+        // unique_lock<mutex> lock(MapPoint::mGlobalMutex);
+        if(map_point->new_born_) {
+            OptimizePoint(map_point);
+            map_point->new_born_ = false;
+        }
+    }
+    return;
+}
+
+void Optimizer::OptimizePoint(MapPoint* map_point) {
+    size_t n_iter = 5;  // 4
+    Eigen::Vector3f p_w = map_point->GetWorldPos();
+    Eigen::Vector3f old_point = p_w;
+    double chi2 = 0.0;
+    Eigen::Matrix3f A;
+    Eigen::Vector3f b;
+    const map<KeyFrame*,tuple<int,int>> observations = map_point->GetObservations();
+    if (observations.size() < 2) return;
+    const double eps = 0.0000000001;
+    for (size_t i = 0; i < n_iter; i++) {
+        A.setZero();
+        b.setZero();
+        float new_chi2 = 0.0;
+        // compute residuals
+        for(const auto &obs : observations) {
+            const int left_index = get<0>(obs.second);
+            KeyFrame* key_frame = obs.first;
+            const Eigen::Matrix3f Rcw = key_frame->GetRotation();
+            const Eigen::Vector3f tcw = key_frame->GetTranslation();
+            const cv::KeyPoint &kpUn = key_frame->mvKeysUn[left_index];
+            const auto &fx = key_frame->fx;
+            const auto &fy = key_frame->fy;
+            const auto &cx = key_frame->cx;
+            const auto &cy = key_frame->cy;
+            Eigen::Vector3f p_obs_2f;
+            p_obs_2f << (kpUn.pt.x - cx) / fx, (kpUn.pt.y -cy) / fy, 1;
+            Eigen::Vector3f p_f = Rcw * p_w + tcw;
+            updateHessianGradientUnitPlane(
+                p_obs_2f, p_f, Rcw, A, b, new_chi2);
+        }
+        // solve linear system
+        const Eigen::Vector3f dp(A.ldlt().solve(b));
+        // check if error increased
+        if ((i > 0 && new_chi2 > chi2) || (bool)std::isnan((float)dp[0])) {
+            // cout << "it " << i << "\t FAILURE \t new_chi2 = " << new_chi2 << endl;
+            p_w = old_point;  // roll-back
+            break;
+        }
+        // update the model
+        Eigen::Vector3f new_point = p_w + dp;
+        old_point = p_w;
+        p_w = new_point;
+        chi2 = new_chi2;
+        // cout << "it " << i << "\t Success \t new_chi2 = " << new_chi2 << "\t norm(b) = " << vk::norm_max(b) << endl;
+        // stop when converged
+        float max = -1;
+        for (int i=0; i<dp.size(); i++) {
+            float abs = std::fabs(dp[i]);
+            if(abs>max){
+                max = abs;
+            }
+        }
+        if(max <= eps) break;
+    }
+}
+
+void Optimizer::updateHessianGradientUnitPlane(
+                                           const Eigen::Vector3f& p_obs_2f,
+                                           const Eigen::Vector3f& p_in_f,
+                                           const Eigen::Matrix3f& R_f_w,
+                                           Eigen::Matrix3f& A,
+                                           Eigen::Vector3f& b,
+                                           float& new_chi2) {
+    Eigen::Matrix<float, 2, 3> J;
+    Eigen::Matrix<float, 2, 3> proj_j;
+    J.setZero();
+    proj_j.setZero();
+    if(p_in_f[2] <= 0) return;
+    const float z_inv = 1 / p_in_f[2];
+    proj_j <<
+        z_inv, 0, -1 * z_inv * z_inv * p_in_f[0],
+        0, z_inv, -1 * z_inv * z_inv * p_in_f[1];
+    J = -proj_j * R_f_w;
+    Eigen::Vector2f p_f_2d = p_in_f.head<2>() / p_in_f[2];
+    const Eigen::Vector2f e(p_obs_2f.head<2>() - p_f_2d);
+    A.noalias() += J.transpose() * J;
+    b.noalias() -= J.transpose() * e;
+    new_chi2 += e.squaredNorm();
+}
+
 // yhh
 void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int& num_fixedKF, int& num_OptKF,
-    int& num_MPs, int& num_edges, bool bLarge, bool bRecInit, std::ofstream *save_times) {
-    // bLarge = true;
+    int& num_MPs, int& num_edges, bool bLarge, bool bRecInit) {
+    bool finish_VIBA2 = pKF->GetMap()->GetIniertialBA2();
     int inv_depth_num = 0;
     int inv_depth_num_bad = 0;
     Map* pCurrentMap = pKF->GetMap();
@@ -2412,8 +2507,9 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
             vpOptimizableKFs.push_back(vpOptimizableKFs.back()->mPrevKF);
             vpOptimizableKFs.back()->mnBALocalForKF = pKF->mnId;
         }
-        else
+        else {
             break;
+        }
     }
 
     int N = vpOptimizableKFs.size();
@@ -2437,8 +2533,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
     }
 
     // Fixed Keyframe: First frame previous KF to optimization window)
-    std::vector<KeyFrame*> lFixedKeyFrames;
-    // list<KeyFrame*> lFixedKeyFrames;
+    list<KeyFrame*> lFixedKeyFrames;
     if(vpOptimizableKFs.back()->mPrevKF)
     {
         lFixedKeyFrames.push_back(vpOptimizableKFs.back()->mPrevKF);
@@ -2678,7 +2773,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
     vector<MapPoint*> vpMapPointEdgeMono;
     vpMapPointEdgeMono.reserve(nExpectedSize);
     // Mono InvDepth
-    vector<EdgeMonoInvDepth*> vpEdgesMonoInvDepth;
+    vector<EdgeStereoInvDepthObsFrame*> vpEdgesMonoInvDepth;
     vpEdgesMonoInvDepth.reserve(nExpectedSize);
     vector<KeyFrame*> vpEdgeKFMonoInvDepth;
     vpEdgeKFMonoInvDepth.reserve(nExpectedSize);
@@ -2714,10 +2809,11 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
         mVisEdges[(*lit)->mnId] = 0;
     }
 
-    static int num = 0;
-    num++;
     for(list<MapPoint*>::iterator lit=lLocalMapPoints.begin(), lend=lLocalMapPoints.end(); lit!=lend; lit++) {
         MapPoint* pMP = *lit;
+        if(finish_VIBA2 && pMP->new_born_) {
+            continue;
+        }
         const map<KeyFrame*,tuple<int,int>> observations = pMP->GetObservations();
         unsigned long id = pMP->mnId+iniMPid+1;
         g2o::VertexSBAPointXYZ* vPoint = nullptr;
@@ -2726,36 +2822,27 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
         double inv_depth = 0.0;
         double u = 0.0;
         double v = 0.0;
-        if(pMP->creat_in_keyframe_) {
-            if(num > 100 && lFixedKeyFrames.size() > 2) {
-                // int len = 2;
-                // if(lFixedKeyFrames.size() > 15) {
-                //     len = static_cast<int>(lFixedKeyFrames.size() / 2);
-                // }
-                // // size_t start_index = vpOptimizableKFs.size() - len;
-                size_t start_index = 0;
-                for(size_t i = start_index; i < lFixedKeyFrames.size(); ++i) {
-                    if(lFixedKeyFrames.at(i)->mnId == pMP->mpHostKF->mnId) {
+        if(finish_VIBA2 && pMP->creat_in_keyframe_) {
+            if(lFixedKeyFrames.size() > 2) {
+                for(const auto& fix_keyframe : lFixedKeyFrames) {
+                    if(fix_keyframe->mnId == pMP->mpHostKF->mnId) {
                         bool good = true;
-                        {
-                            unique_lock<mutex> lock2(pMap->mMutexMapUpdate);
-                            double sigmaSquare1 = pMP->init_sigma_square_;
-                            good = lFixedKeyFrames.at(i)->ProjectPointUnDistort(pMP->GetWorldPos(), &inv_depth, &u, &v);
-                            double errX1 = u - pMP->mInitU;
-                            double errY1 = v - pMP->mInitV;
-                            double th = 0.1;   // 1.2;   5.991;
-                            // double th = 0.5;   // 1.2;   5.991;
-                            if((errX1 * errX1 + errY1 * errY1) > th * sigmaSquare1) {
-                                ++inv_depth_num_bad;
-                                good = false;
-                            }
-                            ++inv_depth_num;
-                            if(observations.size() > 3 && good) {
-                                // pMP->inv_optimizing_ = true;
-                            }
-                            pMP->mpHostKF = lFixedKeyFrames.at(i);
-                            break;
+                        // unique_lock<mutex> lock(MapPoint::mGlobalMutex);
+                        double sigmaSquare1 = pMP->init_sigma_square_;
+                        good = fix_keyframe->ProjectPointUnDistort(pMP->GetWorldPos(), &inv_depth, &u, &v);
+                        double errX1 = u - pMP->mInitU;
+                        double errY1 = v - pMP->mInitV;
+                        double th = 0.1;   // 0.5;  1.2;   5.991;
+                        if((errX1 * errX1 + errY1 * errY1) > th * sigmaSquare1) {
+                            ++inv_depth_num_bad;
+                            good = false;
                         }
+                        ++inv_depth_num;
+                        if(observations.size() > 3 && good) {
+                            pMP->inv_optimizing_ = true;
+                        }
+                        pMP->mpHostKF = fix_keyframe;
+                        break;
                     }
                 }
             }
@@ -2768,8 +2855,6 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
             optimizer.addVertex(vPoint);
         } else {
             vInvDepthPoint = new VertexInvDepth(inv_depth, u, v, pMP->mpHostKF);
-            // vInvDepthPoint = new VertexInvDepth(inv_depth, pMP->mInitU, pMP->mInitV, pMP->mpHostKF);
-            // vInvDepthPoint = new VertexInvDepth(pMP->mInvDepth, pMP->mInitU, pMP->mInitV, pMP->mpHostKF);
             vInvDepthPoint->setId(id);
             // vInvDepthPoint->setMarginalized(false);
             vInvDepthPoint->setMarginalized(true);
@@ -2801,7 +2886,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
                     obs << kpUn.pt.x, kpUn.pt.y;
                     if(pMP->inv_optimizing_) {
                         // ORB_SLAM3::ImuCamPose tmp(pMP->mpHostKF);
-                        EdgeMonoInvDepth* e = new EdgeMonoInvDepth(ORB_SLAM3::ImuCamPose(pMP->mpHostKF), 0, 0);
+                        EdgeStereoInvDepthObsFrame* e = new EdgeStereoInvDepthObsFrame(ORB_SLAM3::ImuCamPose(pMP->mpHostKF), 0, 0);
                         g2o::HyperGraph::Vertex* tmp2 = optimizer.vertex(id);
                         e->setVertex(0,dynamic_cast<g2o::OptimizableGraph::Vertex*>(tmp2));
                         e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(pKFi->mnId)));
@@ -2845,21 +2930,20 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
     for(map<int,int>::iterator mit=mVisEdges.begin(), mend=mVisEdges.end(); mit!=mend; mit++) {
         assert(mit->second>=3);
     }
-    std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
+    // std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
     optimizer.initializeOptimization();
     optimizer.computeActiveErrors();
     float err = optimizer.activeRobustChi2();
     optimizer.optimize(opt_it); // Originally to 2
 
-    auto tmp_edge_size = optimizer.activeEdges().size();
-    std::cout
-        << "tmp_edge_size  ==  " << tmp_edge_size
-        << "\t  tatol edges  ==  " << vpEdgesMono.size()+vpEdgesStereo.size() + vpEdgesMonoInvDepth.size()
-        <<"\n";
-    std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
-    double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
-    std::cout << "optimize_time_gap = " << std::to_string(optimize_time_gap)<<"\n";
-    // *save_times << optimize_time_gap;
+    // auto tmp_edge_size = optimizer.activeEdges().size();
+    // std::cout
+    //     << "tmp_edge_size  ==  " << tmp_edge_size
+    //     << "\t  tatol edges  ==  " << vpEdgesMono.size()+vpEdgesStereo.size() + vpEdgesMonoInvDepth.size()
+    //     <<"\n";
+    // std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
+    // double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
+    // std::cout << "optimize_time_gap = " << std::to_string(optimize_time_gap)<<"\n";
 
     float err_end = optimizer.activeRobustChi2();
     if(pbStopFlag)
@@ -2870,28 +2954,25 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
 
     // Check inlier observations
     // InvDepth
-    int bad_inv_data = 0;
+    // int bad_inv_data = 0;
     for(size_t i = 0; i < vpEdgesMonoInvDepth.size(); ++i) {
-        EdgeMonoInvDepth* e = vpEdgesMonoInvDepth[i];
+        EdgeStereoInvDepthObsFrame* e = vpEdgesMonoInvDepth[i];
         MapPoint* pMP = vpMapPointEdgeMonoInvDepth[i];
         bool bClose = pMP->mTrackDepth<10.f;
         if(pMP->isBad()) {
             continue;
         }
         // # (20% : 3.2189 / 10% :  4.6052 / 5% : 5.9915 / 2%: 7.8240 / 1%: 9.2103)  
-        // const float chi2Mono3 = 3.2189;
         const float chi2Mono3 = 4.6052;
-        // const float chi2Mono3 = 5.991;
-        // std::cout<<"  "<<e->chi2();
         if((e->chi2()>chi2Mono3 && !bClose) || (e->chi2()>1.5f*chi2Mono3 && bClose) || !e->isDepthPositive()) {
             KeyFrame* pKFi = vpEdgeKFMonoInvDepth[i];
             vToErase.push_back(make_pair(pKFi, pMP));
-            ++bad_inv_data;
+            // ++bad_inv_data;
         }
     }
 
     // Mono
-    int bad_mono = 0;
+    // int bad_mono = 0;
     for(size_t i=0, iend=vpEdgesMono.size(); i<iend;i++) {
         EdgeMono* e = vpEdgesMono[i];
         MapPoint* pMP = vpMapPointEdgeMono[i];
@@ -2900,7 +2981,7 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
         if((e->chi2()>chi2Mono2 && !bClose) || (e->chi2()>1.5f*chi2Mono2 && bClose) || !e->isDepthPositive()) {
             KeyFrame* pKFi = vpEdgeKFMono[i];
             vToErase.push_back(make_pair(pKFi,pMP));
-            bad_mono++;
+            // bad_mono++;
         }
     }
     // Stereo
@@ -2999,21 +3080,23 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
     for(list<MapPoint*>::iterator lit=lLocalMapPoints.begin(), lend=lLocalMapPoints.end(); lit!=lend; lit++)
     {
         MapPoint* pMP = *lit;
+        if(finish_VIBA2 && pMP->new_born_) {
+            continue;
+        }
+        // TODO:
+            // 1. 确认pMP->mpHostKF 是否更新了
         if(pMP->inv_optimizing_) {
             ORB_SLAM3::VertexInvDepth* vertex_inv_point = static_cast<ORB_SLAM3::VertexInvDepth*>(optimizer.vertex(pMP->mnId+iniMPid+1));
             Eigen::Vector3f p_c;
             Eigen::Vector3f p_w;
             p_c = vertex_inv_point->estimate().p_3d_.cast<float>();
-            // KeyFrame* pKFi = vpOptimizableKFs[pMP->keframe_index_in_current_ba];
             Eigen::Matrix3f R_cw = pMP->mpHostKF->GetRotation();
             Eigen::Vector3f t_cw = pMP->mpHostKF->GetTranslation();
-        // std::cout <<"id = " << pMP->keframe_index_in_current_ba<<";         "  << t_cw.transpose() <<"\n";
             p_w = R_cw.inverse() * (p_c - t_cw);
             pMP->SetInvDepth(static_cast<double>(vertex_inv_point->estimate().rho));
             pMP->SetWorldPos(p_w);
             pMP->UpdateNormalAndDepth();
             pMP->inv_optimizing_ = false;
-            pMP->keframe_index_in_current_ba = -1;
         } else {
             g2o::VertexSBAPointXYZ* vPoint = static_cast<g2o::VertexSBAPointXYZ*>(optimizer.vertex(pMP->mnId+iniMPid+1));
             // pMP->SetInvDepth(static_cast<double>(vertex_inv_point->estimate().rho));
@@ -3022,20 +3105,22 @@ void Optimizer::LocalInertialBA(KeyFrame *pKF, bool *pbStopFlag, Map *pMap, int&
         }
     }
     pMap->IncreaseChangeIndex();
-    std::cout
-        << "vpOptimizableKFs = " << vpOptimizableKFs.size()
-        << ";\t total_point_num = " << lLocalMapPoints.size()
-        << ";\t inv_depth_num = " << inv_depth_num
-        << ";\t inv_depth_num_bad = " << inv_depth_num_bad
-        << ";\t inv_depth_num_good = " << inv_depth_num - inv_depth_num_bad
-        << ";\t bad_mono = " << bad_mono
-        << ";\t vpEdgesMono = " << vpEdgesMono.size()
-        << ";\t bad_inv_data = " << bad_inv_data
-        << ";\t vpEdgesMonoInvDepth = " << vpEdgesMonoInvDepth.size()
-        << ";\t ratio = " << (inv_depth_num - inv_depth_num_bad)/(double)lLocalMapPoints.size()
-        // << ";\t ratio = " << inv_depth_num/(double)lLocalMapPoints.size()
-        << "\n\n";
+    // std::cout
+    //     << "vpOptimizableKFs = " << vpOptimizableKFs.size()
+    //     << ";\t total_point_num = " << lLocalMapPoints.size()
+    //     << ";\t inv_depth_num = " << inv_depth_num
+    //     << ";\t inv_depth_num_bad = " << inv_depth_num_bad
+    //     << ";\t inv_depth_num_good = " << inv_depth_num - inv_depth_num_bad
+    //     << ";\t bad_mono = " << bad_mono
+    //     << ";\t vpEdgesMono = " << vpEdgesMono.size()
+    //     << ";\t bad_inv_data = " << bad_inv_data
+    //     << ";\t vpEdgesMonoInvDepth = " << vpEdgesMonoInvDepth.size()
+    //     << ";\t ratio = " << (inv_depth_num - inv_depth_num_bad)/(double)lLocalMapPoints.size()
+    //     // << ";\t ratio = " << inv_depth_num/(double)lLocalMapPoints.size()
+    //     << "\n\n";
 }
+
+// yhh2
 
 Eigen::MatrixXd Optimizer::Marginalize(const Eigen::MatrixXd &H, const int &start, const int &end)
 {

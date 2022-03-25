@@ -38,7 +38,6 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, const float bMonocular, 
     mnMatchesInliers = 0;
 
     mbBadImu = false;
-    first_ = true;
     mTinit = 0.f;
 
     mNumLM = 0;
@@ -53,9 +52,6 @@ LocalMapping::LocalMapping(System* pSys, Atlas *pAtlas, const float bMonocular, 
 }
 
 LocalMapping::~LocalMapping() {
-    if(save_times_.is_open()) {
-        save_times_.close();
-    }
 }
 
 void LocalMapping::SetLoopCloser(LoopClosing* pLoopCloser)
@@ -74,15 +70,6 @@ void LocalMapping::Run()
 
     while(1)
     {
-        // if(first_) {
-        //     std::string save_time_path = "/home/yehonghua/ws/slam/ORB-SLAM/ORB_SLAM3_lastest/ORB_SLAM3/lba_time.txt";
-        //     save_times_.open(save_time_path, std::ios::out | std::ios::trunc);
-        //     if(!save_times_.is_open()) {
-        //         std::cout<<"Failed to open save file !!!"<<std::endl;
-        //     }
-        //     save_times_ << "lba time" << "\n";
-        //     first_ = false;
-        // }
         // Tracking will see that Local Mapping is busy
         SetAcceptKeyFrames(false);
 
@@ -163,15 +150,19 @@ void LocalMapping::Run()
 
                         bool bLarge = ((mpTracker->GetMatchesInliers()>75)&&mbMonocular)||((mpTracker->GetMatchesInliers()>100)&&!mbMonocular);
 
-                std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
+                        std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
                         Optimizer::LocalInertialBA(mpCurrentKeyFrame, &mbAbortBA, mpCurrentKeyFrame->GetMap(),
                             num_FixedKF_BA,num_OptKF_BA,num_MPs_BA,num_edges_BA,
                             bLarge, !mpCurrentKeyFrame->GetMap()->GetIniertialBA2());
-                std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
-                double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
-                        std::cout << "optimize_time_gap = " << std::to_string(optimize_time_gap)<<"\n";
-                        // save_times_ << std::to_string(optimize_time_gap) << "\n";
-                        mpCurrentKeyFrame->lba_time_ = std::to_string(optimize_time_gap);
+                        if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2()) {
+                            Optimizer::OptimizeNewPoints(mpCurrentKeyFrame, mpCurrentKeyFrame->GetMap());
+                            std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
+                            double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
+                            // std::cout << "optimize_time_gap = " << std::to_string(optimize_time_gap)<<"\n";
+                            if(optimize_time_gap > 0.0) {
+                                mpCurrentKeyFrame->lba_time_ = optimize_time_gap;
+                            }
+                        }
                         b_doneLBA = true;
                     }
                     else
@@ -412,6 +403,10 @@ void LocalMapping::MapPointCulling()
 
 void LocalMapping::CreateNewMapPoints()
 {
+    // printf("\n");
+    // int new_map_point_num = 0;
+    // int match_mappoint_old = mpCurrentKeyFrame->GetMapPoints().size();
+
     // Retrieve neighbor keyframes in covisibility graph
     int nn = 10;
     // For stereo inertial case
@@ -488,7 +483,14 @@ void LocalMapping::CreateNewMapPoints()
         vector<pair<size_t,size_t> > vMatchedIndices;
         bool bCoarse = mbInertial && mpTracker->mState==Tracking::RECENTLY_LOST && mpCurrentKeyFrame->GetMap()->GetIniertialBA2();
 
+        // yhh 
+
+
+    std::chrono::steady_clock::time_point optimize_0 = std::chrono::steady_clock::now();
         matcher.SearchForTriangulation(mpCurrentKeyFrame,pKF2,vMatchedIndices,false,bCoarse);
+    std::chrono::steady_clock::time_point optimize_1 = std::chrono::steady_clock::now();
+    double optimize_time_gap = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(optimize_1 - optimize_0).count();
+    std::cout << "SearchForTriangulation time = " << std::to_string(optimize_time_gap)<<"\t";
 
         Sophus::SE3<float> sophTcw2 = pKF2->GetPose();
         Eigen::Matrix<float,3,4> eigTcw2 = sophTcw2.matrix3x4();
@@ -655,9 +657,10 @@ void LocalMapping::CreateNewMapPoints()
                 float errX1 = uv1.x - kp1.pt.x;
                 float errY1 = uv1.y - kp1.pt.y;
 
-                if((errX1*errX1+errY1*errY1)>5.991*sigmaSquare1)
-                    continue;
-
+                if((errX1*errX1 + errY1*errY1)>5.991*sigmaSquare1) continue;
+                if(abs(errX1) > 0.5) continue;
+                if(abs(errY1) > 0.5) continue;
+                // std::cout << "[" << errX1 << ", "<< errY1 << ", "<<sigmaSquare1<<"]; ";
             }
             else
             {
@@ -738,8 +741,24 @@ void LocalMapping::CreateNewMapPoints()
 
             mpAtlas->AddMapPoint(pMP);
             mlpRecentAddedMapPoints.push_back(pMP);
+            // new_map_point_num++;
         }
     }    
+
+
+
+    printf("\n");
+// // mFeatVec
+//     std::cout
+//         << "CF features = " << mpCurrentKeyFrame->mFeatVec.size()
+//         << "\t CF_total_matchP = " << mpCurrentKeyFrame->GetMapPointMatches().size()
+//         << "\t Before CF = " << match_mappoint_old
+//         << "\t After CF = " << mpCurrentKeyFrame->GetMapPoints().size()
+//         << "\n"
+//         << "new_map_point_num = " <<new_map_point_num
+//         << "\t new_map_rat = " <<(double)((1.0 * new_map_point_num) / mpCurrentKeyFrame->GetMapPoints().size())
+//         << "\n"
+//         ;
 }
 
 void LocalMapping::SearchInNeighbors()
