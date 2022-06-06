@@ -50,12 +50,12 @@ inline double getInvDepth(const Eigen::Ref<const SeedState>& mu_sigma2_a_b) {
 
 inline double getInvMinDepth(
     const Eigen::Ref<const SeedState>& mu_sigma2_a_b) {
-    return mu_sigma2_a_b(0) + std::sqrt(mu_sigma2_a_b(1));
+    return mu_sigma2_a_b(0) + 3 * std::sqrt(mu_sigma2_a_b(1));
 }
 
 inline double getInvMaxDepth(
     const Eigen::Ref<const SeedState>& mu_sigma2_a_b) {
-    return std::max(mu_sigma2_a_b(0) - std::sqrt(mu_sigma2_a_b(1)), 0.00000001);
+    return std::max(mu_sigma2_a_b(0) - 3 * std::sqrt(mu_sigma2_a_b(1)), 0.00000001);
 }
 
 inline double getMeanFromDepth(double depth) { return 1.0 / depth; }

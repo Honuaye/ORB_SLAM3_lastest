@@ -276,7 +276,8 @@ public:
     bool isBad();
 
     // Compute Scene Depth (q=2 median). Used in monocular.
-    float ComputeSceneMedianDepth(const int q);
+    float ComputeSceneMedianDepth(const int q,
+        double *depth_min = nullptr, double *depth_max = nullptr);
 
     static bool weightComp( int a, int b){
         return a>b;
@@ -396,6 +397,10 @@ public:
     std::vector<FeatureWrapper> feature_wrappers_;
     double seed_mu_range_;
     bool depth_filter_processing_;
+    Frame *mframe_;
+    void setFrame(Frame *frame){
+        if(frame) mframe_ = frame;
+    }
     // // MapPoints associated to keypoints
     // std::vector<MapPoint*> mvpMapPoints;
     /// Get depth at seed.

@@ -48,6 +48,8 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
     mpFrameDrawer(pFrameDrawer), mpMapDrawer(pMapDrawer), mpAtlas(pAtlas), mnLastRelocFrameId(0), time_recently_lost(5.0),
     mnInitialFrameId(0), mbCreatedMap(false), mnFirstFrameId(0), mpCamera2(nullptr), mpLastKeyFrame(static_cast<KeyFrame*>(NULL))
 {
+    // number_to_update_depth_filter_ = 5;
+    number_to_update_depth_filter_ = 10;
     // Load camera parameters from settings file
     if(settings){
         newParameterLoader(settings);
@@ -530,6 +532,53 @@ Tracking::~Tracking()
 {
     //f_track_stats.close();
 
+}
+
+// yhh-depth_filter --------------------------------------
+void Tracking::getOverlapKeyframes(std::vector<KeyFrame*>* ref_frames_with_seeds){
+    ref_frames_with_seeds->clear();
+    // KeyFrame* lasyt = mCurrentFrame->
+    std::vector<std::pair<KeyFrame*, double>> close_kfs;
+    KeyFrame* referenceKF = mCurrentFrame.mpReferenceKF;
+    std::set<KeyFrame*> tmp;
+    tmp = referenceKF->GetConnectedKeyFrames();
+    auto it = std::find(tmp.begin(), tmp.end(), referenceKF);
+    if(it==tmp.end()) {
+        tmp.insert(referenceKF);
+    }
+    for(const auto kf : tmp) {
+        for(auto p : kf->GetMapPoints()) {
+            if(mCurrentFrame.isVisible(p->GetWorldPos())) {
+                // mTcw : GetPose
+                close_kfs.push_back(
+                    std::make_pair(kf,
+                    (mCurrentFrame.GetPose().translation() - kf->GetPose().translation()).norm())
+                );
+                break;
+            }
+        }
+
+    }
+    size_t N = std::min(number_to_update_depth_filter_, close_kfs.size());
+    std::nth_element(close_kfs.begin(), close_kfs.begin() + N, close_kfs.end(), [](
+        const std::pair<KeyFrame*, double>& lhs, 
+        const std::pair<KeyFrame*, double>& rhs){
+            return lhs.second < rhs.second;
+    });
+
+    // printf("close_kfs : = \t");
+    // for(const auto kf : close_kfs) {
+    //     std::cout << kf.second<<", ";
+    // }
+    // printf("\n");
+    // std::cout << "1 close_kfs = "<<close_kfs.size();
+    close_kfs.resize(N);
+    for(const auto kf : close_kfs) {
+        ref_frames_with_seeds->push_back(kf.first);
+    }
+    // std::cout
+    //     << "\t close_kfs = "<<close_kfs.size()
+    //     << "\t ref_frames_with_seeds = "<<ref_frames_with_seeds->size();
 }
 
 void Tracking::newParameterLoader(Settings *settings) {
@@ -2143,12 +2192,12 @@ void Tracking::Track()
         // yhh-depth_filter --------------------------------------
         // Tracking 部分修改： 都是服务下面代码。调用 updateSeedsWithFrame
         // 核心思路是判断 哪些关键帧 可以用当前帧来更新它的种子。 选太多关键帧耗时大， 选太少会不行.
-        if(bOK) {
+        if(bOK && pCurrentMap->GetIniertialBA2()) {
             int max_update_num = 10;
             std::vector<KeyFrame*> ref_frames_with_seeds;
             // // 选取需要被当前图像帧 更新种子的关键帧： 方案一： 取连续的 max_update_num 个 pKF； 方案二： 取共视最高的 max_update_num 个pKF；
             // // 方案一：
-            // KeyFrame* pKF = mCurrentFrame.mpLastKeyFrame;
+            // KeyFrame* pKF = mCurrentFrame.mpReferenceKF;
             // for(int i = 0 ; i < max_update_num; ++i) {
             //     if(pKF) {
             //         ref_frames_with_seeds.push_back(pKF);
@@ -2156,31 +2205,26 @@ void Tracking::Track()
             //     }
             // }
             // // // 方案二：
-            // int cov_num = mvpSortLocalKeyFrames_pair_.size();
-            // if(cov_num > 5) cov_num = 5;
-            // // cov_num = std::min(cov_num, mvpSortLocalKeyFrames_pair_.size());
-            // for(size_t i = 0; i < cov_num; ++i) {
-            //     auto keyframe = mvpSortLocalKeyFrames_pair_.at(i).first;
-            //     auto it = std::find(ref_frames_with_seeds.begin(), ref_frames_with_seeds.end(), keyframe);
-            //     if(it==ref_frames_with_seeds.end()) {
-            //         ref_frames_with_seeds.push_back(keyframe);
-            //     }
-            // }
-            for(auto tmp : mvpSortLocalKeyFrames_pair_) {
-                ref_frames_with_seeds.push_back(tmp.first);
+            size_t tmp_size = mvpSortLocalKeyFrames_pair_.size();
+            size_t N = std::min(number_to_update_depth_filter_, tmp_size);
+            for(size_t i = 0; i < N; ++i) {
+                auto keyframe = mvpSortLocalKeyFrames_pair_.at(i).first;
+                auto it = std::find(ref_frames_with_seeds.begin(), ref_frames_with_seeds.end(), keyframe);
+                if(it==ref_frames_with_seeds.end()) {
+                    ref_frames_with_seeds.push_back(keyframe);
+                }
             }
-            // // if(ref_frames_with_seeds.size() < max_update_num) {
-            // //     ref_frames_with_seeds.push_back(mvpSortLocalKeyFrames_pair_.at(0).first);
-            // // }
+            // // // 方案三： 像 SVO 一样按照距离远近选取
+            getOverlapKeyframes(&ref_frames_with_seeds);
             std::chrono::steady_clock::time_point time0 = std::chrono::steady_clock::now();
             depth_filter_->updateSeedsWithFrame(ref_frames_with_seeds, &mCurrentFrame);
             std::chrono::steady_clock::time_point time1 = std::chrono::steady_clock::now();
             double time_gap = 
                 std::chrono::duration_cast<std::chrono::duration<double,std::milli> >
                 (time1 - time0).count();
-            std::cout << "Tracking update_depth_filter time_gap(ms) = " << time_gap 
-                << " \t ref_frames_with_seeds = " << ref_frames_with_seeds.size()
-                <<  "\n";
+            // std::cout << "Tracking update_depth_filter time_gap(ms) = " << time_gap 
+            //     << " \t ref_frames_with_seeds = " << ref_frames_with_seeds.size()
+            //     <<  "\n";
         }
         // yhh-depth_filter --------------------------------------
 
@@ -2999,10 +3043,18 @@ bool Tracking::TrackLocalMap() {
 
     // yhh
     UpdateLocalMap();
+    // std::cout
+    //     <<"vPMapPoints Before SearchLocalPoints = "
+    //     <<"\t GetMapPoints.size = "<<mCurrentFrame.GetMapPoints().size()
+    //     <<"\t mvpMapPoints.size = " <<mCurrentFrame.mvpMapPoints.size()
+    //     <<"\t mvKeys.size = " <<mCurrentFrame.mvKeys.size()
+    //     <<"\t mvKeysUn.size = " <<mCurrentFrame.mvKeysUn.size()
+    //     <<"\n";
     SearchLocalPoints();
     // yhh-depth_filter --------------------------------------
     // std::cout
-    //     <<"vPMapPoints A SearchLocalPoints = "<<mCurrentFrame.GetMapPoints().size()
+    //     <<"vPMapPoints After SearchLocalPoints = "
+    //     <<"\t GetMapPoints.size = "<<mCurrentFrame.GetMapPoints().size()
     //     <<"\t mvpMapPoints.size = "<<mCurrentFrame.mvpMapPoints.size()
     //     <<"\t mvKeys.size = "<<mCurrentFrame.mvKeys.size()
     //     <<"\t mvKeysUn.size = "<<mCurrentFrame.mvKeysUn.size()
@@ -3463,6 +3515,7 @@ void Tracking::SearchLocalPoints()
         if(mState==LOST || mState==RECENTLY_LOST) // Lost for less than 1 second
             th=15; // 15
 
+        // printf("SearchLocalPoints :: SearchByProjection \n");
         int matches = matcher.SearchByProjection(mCurrentFrame, mvpLocalMapPoints, th, mpLocalMapper->mbFarPoints, mpLocalMapper->mThFarPoints);
     }
 }
@@ -3564,30 +3617,23 @@ void Tracking::UpdateLocalKeyFrames()
     mvpSortLocalKeyFrames_pair_.clear();
     mvpLocalKeyFrames.clear();
     mvpLocalKeyFrames.reserve(3*keyframeCounter.size());
-
     // All keyframes that observe a map point are included in the local map. Also check which keyframe shares most points
     for(map<KeyFrame*,int>::const_iterator it=keyframeCounter.begin(), itEnd=keyframeCounter.end(); it!=itEnd; it++)
     {
         KeyFrame* pKF = it->first;
-
         if(pKF->isBad())
             continue;
-
         if(it->second>max)
         {
             max=it->second;
             pKFmax=pKF;
         }
-
         mvpLocalKeyFrames.push_back(pKF);
         mvpSortLocalKeyFrames_pair_.push_back(std::make_pair(pKF, it->second));
         pKF->mnTrackReferenceForFrame = mCurrentFrame.mnId;
     }
-    // sort mvpSortLocalKeyFrames_pair_
-    int number_to_update_depth_filter = 4;
-    int tmp_size = mvpSortLocalKeyFrames_pair_.size();
-    // size_t N = std::min(number_to_update_depth_filter, tmp_size);
-    size_t N = tmp_size;
+    size_t tmp_size = mvpSortLocalKeyFrames_pair_.size();
+    size_t N = std::min(number_to_update_depth_filter_, tmp_size);
     std::nth_element(
         mvpSortLocalKeyFrames_pair_.begin(), mvpSortLocalKeyFrames_pair_.begin() + N, mvpSortLocalKeyFrames_pair_.end(), 
         [](const std::pair<KeyFrame*, int>& lhs, const std::pair<KeyFrame*, int>& rhs) {

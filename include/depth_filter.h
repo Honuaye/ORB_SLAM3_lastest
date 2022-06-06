@@ -42,9 +42,8 @@ struct DepthFilterOptions {
     /// smaller than the inital sigma, it is considered as converged.
     /// Default value is 200. If seeds should converge quicker, set it to 50 or
     /// if you want very precise 3d points, set it higher.
-    // double seed_convergence_sigma2_thresh = 10;
-    // double seed_convergence_sigma2_thresh = 50;
-    double seed_convergence_sigma2_thresh = 200.0;
+    double seed_convergence_sigma2_thresh = 500.0;
+    // double seed_convergence_sigma2_thresh = 200.0;
 
     /// Threshold for map point seeds convergence. Should be higher to make sure
     /// we have an accurate map (for loop closing).
@@ -160,6 +159,7 @@ class DepthFilter {
 
 namespace depth_filter_utils {
 
+static int false_notSeed_;
 static int false_in_findEpipolarMatchDirect_;
 static int false_in_check_visibility_;
 static int false_in_update_;

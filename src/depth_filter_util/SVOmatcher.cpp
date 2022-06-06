@@ -11,7 +11,7 @@
 namespace ORB_SLAM3 {
 
 SVOMatcher::MatchResult SVOMatcher::findEpipolarMatchDirect(
-    const Frame& ref_frame,
+    const KeyFrame& ref_frame,
     const Frame& cur_frame,
     const Transformation& T_cur_ref,
     const FeatureWrapper& ref_ftr,
@@ -46,12 +46,15 @@ SVOMatcher::MatchResult SVOMatcher::findEpipolarMatchDirect(
     // prepare for match
     //    - find best search level
     //    - warp the reference patch
-    search_level_ = warp::getBestSearchLevel(A_cur_ref_,
-        ref_frame.mpORBextractorLeft->mvImagePyramid.size() - 1);
+    int max_level = 3;
+    search_level_ = warp::getBestSearchLevel(A_cur_ref_, max_level);
+    // search_level_ = warp::getBestSearchLevel(A_cur_ref_,
+        // ref_frame.mpORBextractorLeft->mvImagePyramid.size() - 1);
     // length and direction on SEARCH LEVEL
     epi_length_pyramid_ = epi_image_.norm() / (1 << search_level_);
     GradientVector epi_dir_image = epi_image_.normalized();
-    if (!warp::warpAffine(A_cur_ref_, ref_frame.mpORBextractorLeft->mvImagePyramid[ref_ftr.level],
+    if(!ref_frame.mframe_) return MatchResult::kFailWarp;
+    if (!warp::warpAffine(A_cur_ref_, ref_frame.mframe_->mpORBextractorLeft->mvImagePyramid[ref_ftr.level],
                           ref_ftr.px, ref_ftr.level, search_level_,
                           kHalfPatchSize + 1, patch_with_border_)) {
         if(log_print_) {

@@ -103,6 +103,8 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
      mImuCalib(ImuCalib), mpImuPreintegrated(NULL), mpPrevFrame(pPrevF),mpImuPreintegratedFrame(NULL), mpReferenceKF(static_cast<KeyFrame*>(NULL)), mbIsSet(false), mbImuPreintegrated(false),
      mpCamera(pCamera) ,mpCamera2(nullptr), mbHasPose(false), mbHasVelocity(false)
 {
+    imgLeft = imLeft.clone();
+    imgRight = imRight.clone();
     // Frame ID
     mnId=nNextId++;
 
@@ -396,6 +398,18 @@ set<MapPoint*> Frame::GetMapPoints()
     return s;
 }
 
+bool Frame::isVisible(const Eigen::Vector3f& xyz_w, Eigen::Vector2f* px) {
+    // Eigen::Vector3f xyz_w_float = xyz_w.cast<float>();
+    Eigen::Vector3f xyz_frame = mTcw.rotationMatrix() * xyz_w + mTcw.translation();
+    Eigen::Vector2f p2d = mpCamera->project(xyz_frame);
+    auto imageWidth = mpORBextractorLeft->mvImagePyramid[0].cols;
+    auto imageHeight = mpORBextractorLeft->mvImagePyramid[0].rows;
+    return p2d[0] >= static_cast<float>(0.0)
+        && p2d[1] >= static_cast<float>(0.0)
+        && p2d[0] <  static_cast<float>(imageWidth)
+        && p2d[1] <  static_cast<float>(imageHeight);
+    return true;
+}
 
 void Frame::AssignFeaturesToGrid()
 {

@@ -71,6 +71,8 @@ public:
     }
     DepthFilter* depth_filter_;
     std::vector<std::pair<KeyFrame*, int>> mvpSortLocalKeyFrames_pair_;
+    size_t number_to_update_depth_filter_;
+    void getOverlapKeyframes(std::vector<KeyFrame*>* ref_frames_with_seeds);
     // yhh-depth_filter --------------------------------------
 
     // Parse the config file

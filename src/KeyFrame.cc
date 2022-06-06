@@ -20,6 +20,7 @@
 #include "Converter.h"
 #include "ImuTypes.h"
 #include<mutex>
+#include <math.h>
 
 namespace ORB_SLAM3
 {
@@ -45,6 +46,7 @@ KeyFrame::KeyFrame():
     depth_filter_state_.resize(mvKeysUn.size(), seed::SeedType::NotSeed);
     feature_wrappers_.resize(mvKeysUn.size());
     depth_filter_processing_ = false;
+    mframe_ = nullptr;
     // yhh-depth_filter --------------------------------------
 }
 
@@ -73,6 +75,8 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     depth_filter_state_.resize(mvKeysUn.size(), seed::SeedType::NotSeed);
     feature_wrappers_.resize(mvKeysUn.size());
     depth_filter_processing_ = false;
+    // mframe_ = &F;
+    setFrame(&F);
     // yhh-depth_filter --------------------------------------
 
     mnId=nNextId++;
@@ -785,7 +789,7 @@ bool KeyFrame::UnprojectStereo(int i, Eigen::Vector3f &x3D)
         return false;
 }
 
-float KeyFrame::ComputeSceneMedianDepth(const int q)
+float KeyFrame::ComputeSceneMedianDepth(const int q, double *depth_min, double *depth_max)
 {
     if(N==0)
         return -1.0;
@@ -801,6 +805,8 @@ float KeyFrame::ComputeSceneMedianDepth(const int q)
         Rcw = mRcw;
     }
 
+    float min = std::numeric_limits<float>::max();
+    float max = std::numeric_limits<float>::min();
     vector<float> vDepths;
     vDepths.reserve(N);
     Eigen::Matrix<float,1,3> Rcw2 = Rcw.row(2);
@@ -812,7 +818,15 @@ float KeyFrame::ComputeSceneMedianDepth(const int q)
             Eigen::Vector3f x3Dw = pMP->GetWorldPos();
             float z = Rcw2.dot(x3Dw) + zcw;
             vDepths.push_back(z);
+            min = std::min(min, z);
+            max = std::max(max, z);
         }
+    }
+    if(depth_min) {
+        *depth_min = (double)min;
+    }
+    if(depth_max) {
+        *depth_max = (double)max;
     }
 
     sort(vDepths.begin(),vDepths.end());

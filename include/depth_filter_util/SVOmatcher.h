@@ -20,8 +20,8 @@ class Atlas;
 class SVOMatcher {
  public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    bool log_print_ = false;
-    // bool log_print_ = true;
+    // bool log_print_ = false;
+    bool log_print_ = true;
     static const int kHalfPatchSize = 4;
     static const int kPatchSize = 8;
     typedef ORB_SLAM3::patch_score::ZMSSD<kHalfPatchSize> PatchScore;
@@ -79,7 +79,7 @@ class SVOMatcher {
     SVOMatcher() = default;
     ~SVOMatcher() = default;
 
-    MatchResult findEpipolarMatchDirect(const Frame& ref_frame,
+    MatchResult findEpipolarMatchDirect(const KeyFrame& ref_frame,
                                         const Frame& cur_frame,
                                         const Transformation& T_cur_ref,
                                         const FeatureWrapper& ref_ftr,

@@ -237,6 +237,21 @@ public:
     MapPoint* GetMapPoint(const size_t &idx) {
         return mvpMapPoints[idx];
     }
+
+    bool isVisible(const Eigen::Vector3f& xyz_w, Eigen::Vector2f* px = nullptr);
+    // bool isVisible(const Eigen::Vector3f& xyz_w, Eigen::Vector2f* px = nullptr) const {
+    //     // Eigen::Vector3f xyz_w_float = xyz_w.cast<float>();
+    //     Eigen::Vector3f xyz_frame = mTcw.rotationMatrix() * xyz_w + mTcw.translation();
+    //     Eigen::Vector2f p2d = mpCamera->project(xyz_frame);
+    //     auto to = mpORBextractorLeft->mvImagePyramid.at(0);
+    //     // auto imageWidth = mpORBextractorLeft->mvImagePyramid[0].cols;
+    //     // auto imageHeight = mpORBextractorLeft->mvImagePyramid[0].rows;
+    //     // return p2d[0] >= static_cast<float>(0.0)
+    //     //     && p2d[1] >= static_cast<float>(0.0)
+    //     //     && p2d[0] <  static_cast<float>(imageWidth)
+    //     //     && p2d[1] <  static_cast<float>(imageHeight);
+    //     return true;
+    // }
     // yhh-depth_filter --------------------------------------
 
 

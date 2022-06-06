@@ -98,13 +98,17 @@ void LocalMapping::Run()
             vdMPCulling_ms.push_back(timeMPCulling);
 #endif
 
+            double depth_min;
+            double depth_max;
+            double depth_median = mpCurrentKeyFrame->ComputeSceneMedianDepth(1, &depth_min, &depth_max);
+            depth_min *= 0.5;
+            depth_max = 1.5 * depth_median;
             CreateNewMapPoints();
             // Triangulate new MapPoints
             // if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
-            if(mpCurrentKeyFrame->mPrevKF) {
-                double depth_mean = mpCurrentKeyFrame->mPrevKF->ComputeSceneMedianDepth(1);
-                double depth_min = 0.1;
-                double depth_max = depth_mean * 2;
+            if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
+            // if(mpCurrentKeyFrame->mPrevKF) {
+                // double depth_median = mpCurrentKeyFrame->ComputeSceneMedianDepth(1);
                 // yhh-depth_filter --------------------------------------
                 // mapping 线程对应 depth_filter 核心工作内容包括：
                 // 1. 添加当前新的关键帧到深度滤波器 （只有关键帧才会插入到深度滤波器）
@@ -112,7 +116,7 @@ void LocalMapping::Run()
                     // tracking 是不是已经帮当前关键帧当成普通帧更新过一次深度滤波器内部的关键帧了，这里还这样做会不会
                     // 重复了（SVO好像也有这样的重复累赘 projectLocalMap中内涵了updateSeed 和 之间调用 UpdateSeeds 累赘））
                 // 3. 将和当前关键帧关联的已经收敛的种子提升为 3D MapPoint (updateSeedToMapPoint)  其它收敛的种子呢???
-                depth_filter_->addKeyframe(mpCurrentKeyFrame, depth_mean, depth_min, depth_max);
+                depth_filter_->addKeyframe(mpCurrentKeyFrame, depth_median, depth_min, depth_max);
             }
 
             mbAbortBA = false;
@@ -783,8 +787,6 @@ void LocalMapping::CreateNewMapPoints()
         //     << "\t new MapPoint   " << new_point
         //     << "\n";
     }    
-
-
     printf("\n");
 }
 
