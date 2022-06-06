@@ -1094,6 +1094,7 @@ namespace ORB_SLAM3
             }
         }
 
+        // std::cout <<"nmatches = " << nmatches<<"\n";
         if(mbCheckOrientation)
         {
             int ind1=-1;

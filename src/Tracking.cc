@@ -2215,16 +2215,39 @@ void Tracking::Track()
                 }
             }
             // // // 方案三： 像 SVO 一样按照距离远近选取
+
             getOverlapKeyframes(&ref_frames_with_seeds);
-            std::chrono::steady_clock::time_point time0 = std::chrono::steady_clock::now();
-            depth_filter_->updateSeedsWithFrame(ref_frames_with_seeds, &mCurrentFrame);
-            std::chrono::steady_clock::time_point time1 = std::chrono::steady_clock::now();
-            double time_gap = 
-                std::chrono::duration_cast<std::chrono::duration<double,std::milli> >
-                (time1 - time0).count();
-            // std::cout << "Tracking update_depth_filter time_gap(ms) = " << time_gap 
-            //     << " \t ref_frames_with_seeds = " << ref_frames_with_seeds.size()
-            //     <<  "\n";
+            ORBmatcher  orb_matcher;
+            // printf("SearchForUpdateDepthFilter : \t");
+            mCurrentFrame.ComputeBoW();
+            for(auto keyframe : ref_frames_with_seeds) {
+                std::vector<pair<size_t, size_t> > vMatchedPairs;
+                orb_matcher.SearchForUpdateDepthFilter(&mCurrentFrame, keyframe, vMatchedPairs);
+                // std::cout << vMatchedPairs.size() << ",  ";
+                for(auto match : vMatchedPairs) {
+                    auto obsframe_index = match.first;
+                    auto keyframe_index = match.second;
+                    const cv::KeyPoint &kp1 = mCurrentFrame.mvKeysUn[obsframe_index];
+                    // const cv::KeyPoint &kp1 = mCurrentFrame.mvKeys[obsframe_index];
+                    Eigen::Vector3f xn1 = mCurrentFrame.mpCamera->unprojectEig(kp1.pt);
+                    xn1.normalize();
+                    if(keyframe->feature_block_vec_.at(keyframe_index).is_active) {
+                        keyframe->feature_block_vec_.at(keyframe_index).obs_frame_pose_vec.push_back(mCurrentFrame.GetPose().inverse()); // mTwc
+                        keyframe->feature_block_vec_.at(keyframe_index).undist_norm_xy_vec.push_back(xn1);
+                        keyframe->feature_block_vec_.at(keyframe_index).uv_vec.push_back(Eigen::Vector2f(kp1.pt.x, kp1.pt.y));
+                    }
+                }
+
+            }
+            // std::chrono::steady_clock::time_point time0 = std::chrono::steady_clock::now();
+            // depth_filter_->updateSeedsWithFrame(ref_frames_with_seeds, &mCurrentFrame);
+            // std::chrono::steady_clock::time_point time1 = std::chrono::steady_clock::now();
+            // double time_gap = 
+            //     std::chrono::duration_cast<std::chrono::duration<double,std::milli> >
+            //     (time1 - time0).count();
+            // // std::cout << "Tracking update_depth_filter time_gap(ms) = " << time_gap 
+            // //     << " \t ref_frames_with_seeds = " << ref_frames_with_seeds.size()
+            // //     <<  "\n";
         }
         // yhh-depth_filter --------------------------------------
 

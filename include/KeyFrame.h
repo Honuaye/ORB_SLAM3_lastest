@@ -50,6 +50,16 @@ class FeatureWrapper;
 
 class GeometricCamera;
 
+// yhh-openvins----------
+struct BlobTrack {
+    // Sophus::SE3<float> mTlr;
+    bool is_active = false;
+    // mTwc
+    std::vector<Sophus::SE3<float>> obs_frame_pose_vec;
+    std::vector<Eigen::Vector3f> undist_norm_xy_vec;
+    std::vector<Eigen::Vector2f> uv_vec;
+};
+
 class KeyFrame
 {
     friend class boost::serialization::access;
@@ -388,6 +398,8 @@ public:
     const std::vector<float> mvDepth; // negative value for monocular points
     const cv::Mat mDescriptors;
 
+
+    std::vector<BlobTrack> feature_block_vec_;
     // yhh-depth_filter --------------------------------------
     Eigen::Matrix<double, 3, Eigen::Dynamic, Eigen::ColMajor> bearing_vecs_;
     // using Bearings = Eigen::Matrix<FloatType, 3, Eigen::Dynamic, Eigen::ColMajor>;

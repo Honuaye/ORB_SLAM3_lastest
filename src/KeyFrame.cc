@@ -48,6 +48,10 @@ KeyFrame::KeyFrame():
     depth_filter_processing_ = false;
     mframe_ = nullptr;
     // yhh-depth_filter --------------------------------------
+    // yhh-openvins --------------------------------------
+    BlobTrack block;
+    block.is_active = false;
+    feature_block_vec_.resize(mvKeysUn.size(), block);
 }
 
 KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
@@ -78,7 +82,11 @@ KeyFrame::KeyFrame(Frame &F, Map *pMap, KeyFrameDatabase *pKFDB):
     // mframe_ = &F;
     setFrame(&F);
     // yhh-depth_filter --------------------------------------
-
+    // yhh-openvins --------------------------------------
+    BlobTrack block;
+    block.is_active = false;
+    feature_block_vec_.resize(mvKeysUn.size(), block);
+    // yhh-openvins --------------------------------------
     mnId=nNextId++;
 
     mGrid.resize(mnGridCols);

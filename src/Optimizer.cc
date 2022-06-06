@@ -5587,4 +5587,78 @@ void Optimizer::OptimizeEssentialGraph4DoF(Map* pMap, KeyFrame* pLoopKF, KeyFram
     pMap->IncreaseChangeIndex();
 }
 
+bool Optimizer::single_triangulation(BlobTrack blob_track, Eigen::Vector3f* p_result) {
+    if(blob_track.obs_frame_pose_vec.size() < 2) return false;
+    int total_meas = blob_track.obs_frame_pose_vec.size();
+    Eigen::MatrixXf A = Eigen::MatrixXf::Zero(3 * total_meas, 3);
+    Eigen::MatrixXf b = Eigen::MatrixXf::Zero(3 * total_meas, 1);
+    // Get the position of the anchor/host_frame pose
+    Eigen::Matrix<float, 3, 3> R_wc0 = blob_track.obs_frame_pose_vec.at(0).rotationMatrix();
+    Eigen::Matrix<float, 3, 1> t_wc0 = blob_track.obs_frame_pose_vec.at(0).translation();
+
+    Eigen::Matrix<float, 3, 3> R_wc1 = blob_track.obs_frame_pose_vec.back().rotationMatrix();
+    Eigen::Matrix<float, 3, 1> t_wc1 = blob_track.obs_frame_pose_vec.back().translation();
+    Eigen::Vector3f p_result_orb;
+// bool GeometricTools::Triangulate(Eigen::Vector3f &x_c1, Eigen::Vector3f &x_c2,Eigen::Matrix<float,3,4> &Tc1w ,Eigen::Matrix<float,3,4> &Tc2w , Eigen::Vector3f &x3D)
+    Eigen::Matrix<float,3,4> Tc0w;
+    Tc0w.block<3, 3>(0, 0) = R_wc0;
+    Tc0w.block<3, 1>(0, 3) = t_wc0;
+    auto x_c1 = blob_track.undist_norm_xy_vec.at(0);
+    Eigen::Matrix<float,3,4> Tc1w;
+    Tc1w.block<3, 3>(0, 0) = R_wc1;
+    Tc1w.block<3, 1>(0, 3) = t_wc1;
+    auto x_c2 = blob_track.undist_norm_xy_vec.back();
+    GeometricTools::Triangulate(x_c1, x_c2, Tc0w, Tc1w, p_result_orb);
+
+    for (size_t index = 0; index < blob_track.obs_frame_pose_vec.size(); ++index) {
+        auto obs_frame = blob_track.obs_frame_pose_vec.at(index);
+        // Get the position of this clone in the global
+        Eigen::Matrix<float, 3, 3> R_wci = obs_frame.rotationMatrix();
+        Eigen::Matrix<float, 3, 1> t_wci = obs_frame.translation();
+        Eigen::Matrix<float, 3, 3> R_c0ci = R_wc0.transpose() * R_wci;
+        Eigen::Matrix<float, 3, 1> t_c0ci =
+            R_wc0.transpose() * (t_wci - t_wc0);
+        // Get the UV coordinate normal
+        Eigen::Matrix<float, 3, 1> b_i;
+        b_i = blob_track.undist_norm_xy_vec.at(index);
+        // b_i << blob_track.undist_norm_xy_vec.at(index)(0),
+        //     blob_track.undist_norm_xy_vec.at(index)(1), 1.0;
+        b_i = R_c0ci * b_i;
+        // TODO CHECK
+        // b_i = b_i / b_i.norm();
+        Eigen::Matrix<float, 3, 3> tmp;
+        tmp <<
+            0.0, -b_i(2), b_i(1),
+            b_i(2), 0.0, -b_i(0),
+            -b_i(1), b_i(0), 0.0;
+        // Eigen::Matrix<float, 3, 3> tmp = Utility::skewSymmetric(b_i);
+        A.block(3 * index, 0, 3, 3) = tmp;
+        b.block(3 * index, 0, 3, 1) = tmp * t_c0ci;
+    }
+
+    // Solve the linear system
+    Eigen::MatrixXf p_f = A.colPivHouseholderQr().solve(b);
+    // Check A and p_f
+    Eigen::JacobiSVD<Eigen::MatrixXf> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+    Eigen::MatrixXf singularValues;
+    singularValues.resize(svd.singularValues().rows(), 1);
+    singularValues = svd.singularValues();
+    float condA = singularValues(0, 0) / singularValues(singularValues.rows() - 1, 0);
+    // // If we have a bad condition number, or it is too close
+    // // Then set the flag for bad (i.e. set z-axis to nan)
+    float max_cond_number = 1000;
+    float min_dist = 0.001;
+    float max_dist = 40;
+    if (std::abs(condA) > max_cond_number || p_f(2, 0) < min_dist ||
+        p_f(2, 0) > max_dist || std::isnan(p_f.norm())) {
+        return false;
+    }
+    if(0) {
+        *p_result = p_f.cast<float>();
+    } else {
+        *p_result = p_result_orb;
+    }
+    return true;
+}
+
 } //namespace ORB_SLAM

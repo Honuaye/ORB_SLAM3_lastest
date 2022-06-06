@@ -25,6 +25,7 @@
 #include "KeyFrame.h"
 #include "LoopClosing.h"
 #include "Frame.h"
+#include "GeometricTools.h"
 
 #include <math.h>
 
@@ -97,6 +98,12 @@ public:
     void static InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &scale, Eigen::Vector3d &bg, Eigen::Vector3d &ba, bool bMono, Eigen::MatrixXd  &covInertial, bool bFixedVel=false, bool bGauss=false, float priorG = 1e2, float priorA = 1e6);
     void static InertialOptimization(Map *pMap, Eigen::Vector3d &bg, Eigen::Vector3d &ba, float priorG = 1e2, float priorA = 1e6);
     void static InertialOptimization(Map *pMap, Eigen::Matrix3d &Rwg, double &scale);
+
+    bool static single_triangulation(BlobTrack blob_track, Eigen::Vector3f* p_result);
+     
+
+
+
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW;
 };

@@ -104,9 +104,31 @@ void LocalMapping::Run()
             depth_min *= 0.5;
             depth_max = 1.5 * depth_median;
             CreateNewMapPoints();
+            
+            auto mvpMapPoints = mpCurrentKeyFrame->GetMapPointMatches();
+            // yhh-tmp
+            if(mpCurrentKeyFrame->GetMap()->GetIniertialBA1()) {
+                for(size_t index = 0; index < mvpMapPoints.size(); index++) {
+                    if(mvpMapPoints.at(index) != nullptr) {
+                        continue;
+                    }
+                    const cv::KeyPoint &kp1 = (mpCurrentKeyFrame -> NLeft == -1) ? mpCurrentKeyFrame->mvKeysUn[index]
+                        : (index < mpCurrentKeyFrame -> NLeft) ? mpCurrentKeyFrame -> mvKeys[index]
+                            : mpCurrentKeyFrame -> mvKeysRight[index - mpCurrentKeyFrame -> NLeft];
+                    Eigen::Vector3f xn1 = mpCurrentKeyFrame->mpCamera->unprojectEig(kp1.pt);
+                    xn1.normalize();
+                    BlobTrack block;
+                    block.is_active = true;
+                    block.obs_frame_pose_vec.push_back(mpCurrentKeyFrame->GetPoseInverse());
+                    block.undist_norm_xy_vec.push_back(xn1);
+                    block.uv_vec.push_back(Eigen::Vector2f(kp1.pt.x, kp1.pt.y));
+                    mpCurrentKeyFrame->feature_block_vec_.at(index) = block;
+                }
+            }
             // Triangulate new MapPoints
             // if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
-            if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
+            bool flag = false;
+            if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF && flag) {
             // if(mpCurrentKeyFrame->mPrevKF) {
                 // double depth_median = mpCurrentKeyFrame->ComputeSceneMedianDepth(1);
                 // yhh-depth_filter --------------------------------------
@@ -425,8 +447,8 @@ void LocalMapping::CreateNewMapPoints()
             pKF = pKF->mPrevKF;
         }
     }
-
-    if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF) {
+    bool flag = false;
+    if(mpCurrentKeyFrame->GetMap()->GetIniertialBA2() && mpCurrentKeyFrame->mPrevKF && flag) {
         int converg_num = 0;
         // for(auto keyF : vpNeighKFs) {
         //     for(size_t i =0; i < keyF->depth_filter_state_.size(); ++i) {
@@ -468,7 +490,6 @@ void LocalMapping::CreateNewMapPoints()
         //     }
         // }
     }
-
 
     float th = 0.6f;
 
@@ -555,8 +576,18 @@ void LocalMapping::CreateNewMapPoints()
         for(int ikp=0; ikp<nmatches; ikp++)
         {
             const int &idx1 = vMatchedIndices[ikp].first;
+            // Eigen::MatrixXD
             const int &idx2 = vMatchedIndices[ikp].second;
+            // if(pKF2->feature_block_vec_.at(idx2).is_active) {
+            //     std::cout
+            //         << "obs = "
+            //         << pKF2->feature_block_vec_.at(idx2).obs_frame_pose_vec.size()
+            //         <<"\t";
+            // }
 
+
+            // mpCurrentKeyFrame -> NLeft = -1
+            // idx1 < mpCurrentKeyFrame -> NLeft  false
             const cv::KeyPoint &kp1 = (mpCurrentKeyFrame -> NLeft == -1) ? mpCurrentKeyFrame->mvKeysUn[idx1]
                                                                          : (idx1 < mpCurrentKeyFrame -> NLeft) ? mpCurrentKeyFrame -> mvKeys[idx1]
                                                                                                                : mpCurrentKeyFrame -> mvKeysRight[idx1 - mpCurrentKeyFrame -> NLeft];
@@ -648,6 +679,18 @@ void LocalMapping::CreateNewMapPoints()
             cosParallaxStereo = min(cosParallaxStereo1,cosParallaxStereo2);
 
             Eigen::Vector3f x3D;
+            Eigen::Vector3f x3D_me;
+            bool x3D_me_flag = false;
+            // yhh-openvins----------
+            if(1){
+                if(pKF2->feature_block_vec_.at(idx2).is_active) {
+                    pKF2->feature_block_vec_.at(idx2).obs_frame_pose_vec.push_back(
+                        mpCurrentKeyFrame->GetPose().inverse()); // mTwc
+                    pKF2->feature_block_vec_.at(idx2).undist_norm_xy_vec.push_back(xn1);
+                    pKF2->feature_block_vec_.at(idx2).uv_vec.push_back(Eigen::Vector2f(kp1.pt.x, kp1.pt.y));
+                    x3D_me_flag = Optimizer::single_triangulation(pKF2->feature_block_vec_.at(idx2), &x3D_me);
+                }
+            }
 
             bool goodProj = false;
             bool bPointStereo = false;
@@ -682,14 +725,22 @@ void LocalMapping::CreateNewMapPoints()
                 continue;
 
             //Check triangulation in front of cameras
+
             float z1 = Rcw1.row(2).dot(x3D) + tcw1(2);
             if(z1<=0)
                 continue;
-
             float z2 = Rcw2.row(2).dot(x3D) + tcw2(2);
             if(z2<=0)
                 continue;
-
+            //Check triangulation in front of cameras
+            const float x1m = Rcw1.row(0).dot(x3D_me)+tcw1(0);
+            const float y1m = Rcw1.row(1).dot(x3D_me)+tcw1(1);
+            float z1m = Rcw1.row(2).dot(x3D_me) + tcw1(2);
+            // if(z1m<=0)
+            //     continue;
+            float z2m = Rcw2.row(2).dot(x3D_me) + tcw2(2);
+            // if(z2m<=0)
+            //     continue;
             //Check reprojection error in first keyframe
             const float &sigmaSquare1 = mpCurrentKeyFrame->mvLevelSigma2[kp1.octave];
             const float x1 = Rcw1.row(0).dot(x3D)+tcw1(0);
@@ -699,8 +750,20 @@ void LocalMapping::CreateNewMapPoints()
             if(!bStereo1)
             {
                 cv::Point2f uv1 = pCamera1->project(cv::Point3f(x1,y1,z1));
+                cv::Point2f uv1m = pCamera1->project(cv::Point3f(x1m,y1m,z1m));
                 float errX1 = uv1.x - kp1.pt.x;
                 float errY1 = uv1.y - kp1.pt.y;
+                float errX1m = uv1m.x - kp1.pt.x;
+                float errY1m = uv1m.y - kp1.pt.y;
+                if(!pKF2->feature_block_vec_.at(idx2).is_active || !x3D_me_flag) {
+                    errX1m = 0.0;
+                    errY1m = 0.0;
+                }
+                std::cout
+                    <<"{X3D:(" << errX1*errX1
+                    <<"," << errY1*errY1 <<"), X3Dme:(" << errX1m* errX1m
+                    <<"," << errY1m * errY1m <<")}"
+                    <<"\t";
 
                 if((errX1*errX1+errY1*errY1)>5.991*sigmaSquare1)
                     continue;
